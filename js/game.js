@@ -2,11 +2,40 @@
 
 const VERSION = 'v1.8';
 
-// ── Background image ──────────────────────────────────────────
-const bgImage = new Image();
-bgImage.src = 'assets/ChatGPT Image Mar 6, 2026, 04_18_59 PM.png';
+// ── Background images (per level) ─────────────────────────────
+const BG_SRCS = [
+  'assets/ChatGPT Image Mar 6, 2026, 04_18_59 PM.png', // level 1
+  'assets/castle-desert-square.png',                    // level 2
+];
+const bgImages = BG_SRCS.map(src => {
+  const i = new Image(); i.src = src; return i;
+});
+// Alias for legacy code
+const bgImage = bgImages[0];
 let bgImageReady = false;
 bgImage.onload = () => { bgImageReady = true; };
+bgImages.forEach(i => { if(i !== bgImage) i.onload = ()=>{}; });
+
+function getLevelBgImage(lvlIdx){
+  const i = bgImages[lvlIdx] || bgImages[0];
+  return i.complete && i.naturalWidth > 0 ? i : (bgImageReady ? bgImage : null);
+}
+
+// ── Desert tilesets ────────────────────────────────────────────
+const desertGroundImg = new Image();
+desertGroundImg.src = 'assets/desert/ground-tileset.png';
+let desertGroundReady = false;
+desertGroundImg.onload = () => { desertGroundReady = true; };
+
+const desertPlatImg = new Image();
+desertPlatImg.src = 'assets/desert/platform-tileset.png';
+let desertPlatReady = false;
+desertPlatImg.onload = () => { desertPlatReady = true; };
+
+const desertPyramidImg = new Image();
+desertPyramidImg.src = 'assets/desert/pyramid-tileset.png';
+let desertPyramidReady = false;
+desertPyramidImg.onload = () => { desertPyramidReady = true; };
 
 // ── Platform sprites ──────────────────────────────────────────
 const platGroundImg = new Image();
@@ -30,43 +59,71 @@ let castleImgReady = false;
 castleImg.onload = () => { castleImgReady = true; };
 
 // ════════════════════════════════════════════════════════════════
-//  PALADIN SPRITE LOADER
+//  HERO SPRITE LOADER (knight / mage / ninja / pirate)
 // ════════════════════════════════════════════════════════════════
 
-const PALADIN_BASE = 'assets/brave_paladin/';
-const PALADIN_SPRITES = { idle:{}, run:{}, jump:{} };
+const HERO_BASES = {
+  knight: 'assets/brave_paladin/',
+  mage:   'assets/hero_mage/',
+  ninja:  'assets/hero_ninja/',
+  pirate: 'assets/hero_pirate/',
+};
+const HERO_SPRITES = {
+  knight: { idle:{}, run:{}, jump:{}, ready: false },
+  mage:   { idle:{}, run:{}, jump:{}, ready: false },
+  ninja:  { idle:{}, run:{}, jump:{}, ready: false },
+  pirate: { idle:{}, run:{}, jump:{}, ready: false },
+};
+
+// Keep PALADIN_SPRITES as alias for backward compat
+const PALADIN_SPRITES = HERO_SPRITES.knight;
 let paladinSpritesReady = false;
 
-(function loadPaladinSprites(){
-  const toLoad = [];
+function loadHeroSprites(id, runFrames, jumpFrames){
+  const base = HERO_BASES[id];
+  const spr  = HERO_SPRITES[id];
+
   function img(src){
     const i = new Image();
-    const p = new Promise(r => { i.onload = r; i.onerror = r; });
-    i.src = PALADIN_BASE + src;
-    toLoad.push(p);
+    i.src = base + src;
     return i;
   }
-  // Idle (static rotations)
-  PALADIN_SPRITES.idle.right = img('rotations/east.png');
-  PALADIN_SPRITES.idle.left  = img('rotations/west.png');
-  // Run — 6 frames per direction
-  PALADIN_SPRITES.run.right = [];
-  PALADIN_SPRITES.run.left  = [];
-  for(let i=0;i<6;i++){
-    const pad = String(i).padStart(3,'0');
-    PALADIN_SPRITES.run.right.push(img('animations/running-6-frames/south-east/frame_'+pad+'.png'));
-    PALADIN_SPRITES.run.left.push(img('animations/running-6-frames/south-west/frame_'+pad+'.png'));
+  function imgPromise(src){
+    const i = new Image();
+    const p = new Promise(r => { i.onload = r; i.onerror = r; });
+    i.src = base + src;
+    return {i, p};
   }
-  // Jump — 8 frames per direction
-  PALADIN_SPRITES.jump.right = [];
-  PALADIN_SPRITES.jump.left  = [];
-  for(let i=0;i<8;i++){
+
+  // Idle sprites — mark ready as soon as these load
+  const {i: idleR, p: pIdleR} = imgPromise('rotations/east.png');
+  const {i: idleL, p: pIdleL} = imgPromise('rotations/west.png');
+  spr.idle.right = idleR;
+  spr.idle.left  = idleL;
+  Promise.all([pIdleR, pIdleL]).then(()=>{
+    spr.ready = true;
+    if(id==='knight') paladinSpritesReady = true;
+  });
+
+  // Run + jump frames loaded separately (may 404 — graceful fallback in drawPlayerAdv)
+  spr.run.right = []; spr.run.left = [];
+  for(let i=0;i<runFrames;i++){
     const pad = String(i).padStart(3,'0');
-    PALADIN_SPRITES.jump.right.push(img('animations/jumping-2/south-east/frame_'+pad+'.png'));
-    PALADIN_SPRITES.jump.left.push(img('animations/jumping-2/south-west/frame_'+pad+'.png'));
+    spr.run.right.push(img('animations/running-6-frames/south-east/frame_'+pad+'.png'));
+    spr.run.left.push(img('animations/running-6-frames/south-west/frame_'+pad+'.png'));
   }
-  Promise.all(toLoad).then(()=>{ paladinSpritesReady = true; });
-})();
+  spr.jump.right = []; spr.jump.left = [];
+  for(let i=0;i<jumpFrames;i++){
+    const pad = String(i).padStart(3,'0');
+    spr.jump.right.push(img('animations/jumping-2/south-east/frame_'+pad+'.png'));
+    spr.jump.left.push(img('animations/jumping-2/south-west/frame_'+pad+'.png'));
+  }
+}
+
+loadHeroSprites('knight', 6, 8);
+loadHeroSprites('mage',   6, 8);
+loadHeroSprites('ninja',  6, 8);
+loadHeroSprites('pirate', 6, 8);
 
 // ════════════════════════════════════════════════════════════════
 //  GOBLIN SPRITE LOADER
@@ -91,6 +148,31 @@ let goblinSpritesReady = false;
     GOBLIN_SPRITES.west.push(img('walk/west/frame_'+pad+'.png'));
   }
   Promise.all(toLoad).then(()=>{ goblinSpritesReady = true; });
+})();
+
+// ════════════════════════════════════════════════════════════════
+//  MUMMY SPRITE LOADER
+// ════════════════════════════════════════════════════════════════
+
+const MUMMY_BASE = 'assets/mummy/';
+const MUMMY_SPRITES = { east: [], west: [] };
+let mummySpritesReady = false;
+
+(function loadMummySprites(){
+  const toLoad = [];
+  function img(src){
+    const i = new Image();
+    const p = new Promise(r => { i.onload = r; i.onerror = r; });
+    i.src = MUMMY_BASE + src;
+    toLoad.push(p);
+    return i;
+  }
+  for(let i=0;i<6;i++){
+    const pad = String(i).padStart(3,'0');
+    MUMMY_SPRITES.east.push(img('walk/east/frame_'+pad+'.png'));
+    MUMMY_SPRITES.west.push(img('walk/west/frame_'+pad+'.png'));
+  }
+  Promise.all(toLoad).then(()=>{ mummySpritesReady = true; });
 })();
 
 // ════════════════════════════════════════════════════════════════
@@ -208,18 +290,28 @@ function generateLevel(lvl) {
   const segW = 380;        // largeur par segment (plus long)
   worldW = segW * (lvl.numEnemies + 4) + 300;
 
+  // ── Château — positionné EN PREMIER pour réserver sa zone ────
+  const caW = 200, caH = 220;
+  const caX = Math.floor(worldW * (0.33 + Math.random() * 0.34));
+  castle = { x: caX, y: gY - caH, w: caW, h: caH };
+  castleChestState = 'closed';
+  const caMargin = 30; // clear zone around castle
+  function inCastleZone(x, w){ return x + w > caX - caMargin && x < caX + caW + caMargin; }
+
   // Sol (tuiles)
   for(let x=0; x<worldW; x+=200)
     platforms.push({x, y:gY, w:200, h:60, type:'ground'});
 
-  // Plateformes flottantes
+  // Plateformes flottantes (skip castle zone)
   const floatPlats = [];
   let cx = 240;
   for(let i=0; i<lvl.numEnemies+5; i++){
     const pw = rand(90,170);
-    if(cx + pw >= worldW - 280) break; // ne pas empiéter sur la zone du drapeau
-    const ph = gY - rand(60,90);
-    floatPlats.push({x:cx, y:ph, w:pw, h:20, type:'platform'});
+    if(cx + pw >= worldW - 280) break;
+    if(!inCastleZone(cx, pw)){
+      const ph = gY - rand(60,90);
+      floatPlats.push({x:cx, y:ph, w:pw, h:20, type:'platform'});
+    }
     cx += segW - 60 + rand(0,80);
   }
   platforms.push(...floatPlats);
@@ -261,11 +353,11 @@ function generateLevel(lvl) {
   GS.maxStars = stars_list.length;
   GS.stars    = 0;
 
-  // ── Blocs à frapper (❓) ──────────────────────────────────────
-  // Placés à gY-155 à gY-170 (accessibles en sautant depuis le sol)
+  // ── Blocs à frapper (❓) — skip castle zone ───────────────────
   const brickTypes = ['life','life','coin','coin','coin'];
   const brickSpacing = Math.floor(worldW / 7);
   for(let bx=brickSpacing; bx<worldW-200; bx+=brickSpacing+rand(-40,40)){
+    if(inCastleZone(bx, 34)) continue;
     bricks.push({
       x: bx, y: gY - rand(155,170),
       w: 34, h: 34,
@@ -275,36 +367,31 @@ function generateLevel(lvl) {
     });
   }
 
-  // ── Plateformes au sol (petites surélévations) ──────────────
+  // ── Plateformes au sol (petites surélévations) — skip castle zone ─
   const groundPlatCount = rand(1, 3);
   const gpSpacing = Math.floor(worldW / (groundPlatCount + 2));
   for(let i=0; i<groundPlatCount; i++){
     const gpx = gpSpacing * (i+1) + rand(-60, 60);
     const gpw = rand(90, 160);
-    if(gpx > 200 && gpx + gpw < worldW - 200){
+    if(gpx > 200 && gpx + gpw < worldW - 200 && !inCastleZone(gpx, gpw)){
       platforms.push({x:gpx, y:gY - rand(25, 45), w:gpw, h:20, type:'platform'});
     }
   }
 
-  // ── Colonnes (décoratives + plateforme one-way au sommet) ────
+  // ── Colonnes — skip castle zone ───────────────────────────────
   const pillarSpacing = 320;
   for(let px=pillarSpacing; px<worldW-100; px+=pillarSpacing+rand(-50,50)){
+    if(inCastleZone(px, 28)) continue;
     const ph2 = rand(70, 160);
     const pw  = 28;
     pillars.push({ x:px, y:gY-ph2, w:pw, h:ph2+60 });
-    // Plateforme one-way au sommet du pilier (largeur visuelle du sprite)
-    const topW = Math.round((ph2+60) * 0.56);  // ratio pillar.png ≈ 0.56:1
+    const topW = Math.round((ph2+60) * 0.56);
     const topX = px + pw/2 - topW/2;
     platforms.push({ x:topX, y:gY-ph2, w:topW, h:14, type:'platform' });
   }
 
   // Drapeau
   flag = { x: worldW-140, y: gY-100, w:30, h:100 };
-
-  // Château (placé aléatoirement entre 1/3 et 2/3 du niveau, au sol)
-  const caX = Math.floor(worldW * (0.33 + Math.random() * 0.34));
-  castle = { x: caX, y: gY - 210, w: 170, h: 210 };
-  castleChestState = 'closed';
   castleRewardCoins = 0;
 
   // Player spawn
@@ -324,10 +411,10 @@ let SAVE = JSON.parse(localStorage.getItem('cqSave') || '{"totalStars":0,"skin":
 function saveSave(){ localStorage.setItem('cqSave', JSON.stringify(SAVE)); }
 
 const SKINS = [
-  { id:'knight', name:'Chevalier', emoji:'⚔️',  cost:0,   desc:'Armure classique' },
-  { id:'mage',   name:'Mage',      emoji:'🔮',  cost:30,  desc:'Robe et bâton magique' },
-  { id:'ninja',  name:'Ninja',     emoji:'🥷',  cost:60,  desc:'Tenue sombre & kunai' },
-  { id:'pirate', name:'Pirate',    emoji:'☠️',  cost:100, desc:'Tricorne & sabre' },
+  { id:'knight', name:'Chevalier', emoji:'⚔️',  cost:0,   desc:'Armure classique',     img:'assets/brave_paladin/rotations/south.png' },
+  { id:'mage',   name:'Mage',      emoji:'🔮',  cost:30,  desc:'Robe et bâton magique', img:'assets/hero_mage/rotations/south.png' },
+  { id:'ninja',  name:'Ninja',     emoji:'🥷',  cost:60,  desc:'Tenue sombre & kunai',  img:'assets/hero_ninja/rotations/south.png' },
+  { id:'pirate', name:'Pirate',    emoji:'☠️',  cost:100, desc:'Tricorne & sabre',       img:'assets/hero_pirate/rotations/south.png' },
 ];
 
 function recordError(q){
@@ -387,8 +474,11 @@ function renderShop(){
     else if(owned){ btnLabel='Équiper'; }
     else if(canBuy){ btnLabel=`Acheter`; }
     else{ btnClass+=' owned'; btnLabel=`🪙 ${s.cost}`; btnDisabled='disabled'; }
+    const thumb = s.img
+      ? `<img src="${s.img}" style="width:48px;height:48px;image-rendering:pixelated;object-fit:contain;" alt="${s.name}">`
+      : `<span class="shopEmoji">${s.emoji}</span>`;
     return `<div class="shopCard${equipped?' active':''}">
-      <span class="shopEmoji">${s.emoji}</span>
+      ${thumb}
       <div class="shopInfo"><b>${s.name}</b><br><small>${s.desc}${s.cost>0&&!owned?' · 🪙'+s.cost:''}</small></div>
       <button class="${btnClass}" ${btnDisabled} onclick="shopAction('${s.id}')">${btnLabel}</button>
     </div>`;
@@ -1184,8 +1274,11 @@ function drawFlag(f){
 function drawPlayerAdv(p){
   if(p.invTimer>0 && Math.floor(p.invTimer/6)%2===0) return;
 
-  // Fallback to old pixel-art if sprites not loaded yet
-  if(!paladinSpritesReady){
+  const skin = SAVE.skin || 'knight';
+  const spr  = HERO_SPRITES[skin] || HERO_SPRITES.knight;
+
+  // Fallback to pixel-art if sprites not ready
+  if(!spr.ready){
     drawPlayerAdvFallback(p);
     return;
   }
@@ -1193,23 +1286,20 @@ function drawPlayerAdv(p){
   ctx.save();
   ctx.translate(p.x+p.w/2, p.y+p.h);
 
-  // Pick the right sprite frame
   const dir = p.facing>=0 ? 'right' : 'left';
   let sprite;
 
   if(!p.onGround){
-    // Jumping: 8 frames mapped to vy (JUMP_V=-560 to +560)
-    const jFrames = PALADIN_SPRITES.jump[dir];
+    const jFrames = spr.jump[dir];
     const t = Math.min(1, Math.max(0, (p.vy - JUMP_V) / (-JUMP_V * 2)));
     const fi = Math.min(jFrames.length-1, Math.floor(t * jFrames.length));
-    sprite = jFrames[fi];
+    sprite = (jFrames[fi] && jFrames[fi].naturalWidth) ? jFrames[fi] : spr.idle[dir];
   } else if(Math.abs(p.vx) > 0.5){
-    // Running: 6 frames cycle
-    const rFrames = PALADIN_SPRITES.run[dir];
+    const rFrames = spr.run[dir];
     const fi = Math.floor(p.walkT * 1.5) % rFrames.length;
-    sprite = rFrames[fi];
+    sprite = (rFrames[fi] && rFrames[fi].naturalWidth) ? rFrames[fi] : spr.idle[dir];
   } else {
-    sprite = PALADIN_SPRITES.idle[dir];
+    sprite = spr.idle[dir];
   }
 
   // Draw sprite at 2× size (112×112)
@@ -1240,8 +1330,8 @@ function drawGoblinAdv(bob){
   const frame = Math.floor(Date.now()/120) % 6;
   // East frames only — parent ctx.scale(e.facing,1) handles left-facing mirror
   const img = GOBLIN_SPRITES.east[frame];
-  // Sprite is 48×48; origin is bottom-center (0,0) from parent ctx.translate
-  ctx.drawImage(img, -24, -48+bob, 48, 48);
+  // Draw at 2× (96×96) to match paladin scale (56px→112px)
+  ctx.drawImage(img, -48, -96+bob, 96, 96);
 }
 
 function drawSkeletonAdv(bob){
@@ -1264,67 +1354,131 @@ function drawDragonAdv(bob){
   pxDraw(ctx, SPR_DRAGON[frame], -20, -44+bob, sc, false);
 }
 
+// ── Mummy (advanced — PixelLab sprites) ──────────────────────
+function drawMummyAdv(bob){
+  if(!mummySpritesReady){ drawMummy(bob); return; }
+  const frame = Math.floor(Date.now()/160) % 6;
+  const img = MUMMY_SPRITES.east[frame];
+  ctx.drawImage(img, -48, -96+bob, 96, 96);
+}
+
+// ── Mummy (simple — pixel art fallback) ───────────────────────
+function drawMummy(bob){
+  // Ombre
+  ctx.fillStyle='rgba(0,0,0,.2)';
+  ctx.beginPath(); ctx.ellipse(0,0,11,3,0,0,Math.PI*2); ctx.fill();
+
+  // Jambes — bandages
+  ctx.fillStyle='#e8e0c8';
+  ctx.fillRect(-8,-14,6,14); ctx.fillRect(2,-14,6,14);
+  ctx.fillStyle='#b8a888';
+  ctx.fillRect(-7,-12,4,2); ctx.fillRect(3,-12,4,2);
+  ctx.fillRect(-7,-7,4,2);  ctx.fillRect(3,-7,4,2);
+
+  // Corps — bandages
+  ctx.fillStyle='#e8e0c8';
+  ctx.fillRect(-11,-34+bob,22,22);
+  ctx.fillStyle='#c8b898';
+  ctx.fillRect(-10,-32+bob,20,2); ctx.fillRect(-10,-26+bob,20,2); ctx.fillRect(-10,-20+bob,20,2);
+
+  // Bras tendus en avant
+  ctx.fillStyle='#e8e0c8';
+  ctx.fillRect(-18,-30+bob,7,10); ctx.fillRect(11,-30+bob,7,10);
+
+  // Tête
+  ctx.fillStyle='#e0d8b8';
+  ctx.fillRect(-10,-52+bob,20,20);
+  ctx.fillStyle='#c0b890';
+  ctx.fillRect(-9,-50+bob,18,2); ctx.fillRect(-9,-44+bob,18,2);
+
+  // Yeux luisants verts
+  ctx.fillStyle='#00ff80';
+  ctx.fillRect(-6,-46+bob,4,4); ctx.fillRect(2,-46+bob,4,4);
+  ctx.fillStyle='#00cc60';
+  ctx.fillRect(-5,-45+bob,2,2); ctx.fillRect(3,-45+bob,2,2);
+}
+
 // ── Arrière-plan avancé — image parallaxe ─────────────────────
 function drawBgAdv(c){
-  if(!bgImageReady){ drawBg(c); return; }
+  const bg = getLevelBgImage(GS.level);
+  if(!bg){ drawBg(c); return; }
 
-  // Image aspect ratio — cover the canvas height, tile horizontally
-  const imgAspect = bgImage.width / bgImage.height;
+  const imgAspect = bg.width / bg.height;
   const drawH = H;
   const drawW = drawH * imgAspect;
-
-  // Parallax: background scrolls slower than camera
   const px = camX * 0.15;
-  // Tile the image seamlessly
   const startX = -(px % drawW + drawW) % drawW;
-
   for(let x = startX - drawW; x < W + drawW; x += drawW){
-    ctx.drawImage(bgImage, x, 0, drawW, drawH);
+    ctx.drawImage(bg, x, 0, drawW, drawH);
   }
 }
 
 // ── Sol continu (mode avancé) ─────────────────────────────────
 // ground platform.png (1536×1024 RGBA) — contenu : x=165..1373 y=310..627 (1209×318)
 // On crop le centre (sans les bords arrondis) pour un tiling continu
-function drawGroundStripAdv(gY){
-  const sx = 300, sy = 310, sw = 940, sh = 318;    // zone centrale sans arrondi
-  const displayH = 80;                               // hauteur visuelle
-  const tileW    = Math.round(displayH * (sw / sh)); // ≈237px
-  const drawY    = gY - 15;                           // herbe dépasse au-dessus du sol
+// Tile a tileset PNG seamlessly: picks a 16×16 body tile and repeats it
+function drawTiledStrip(tilesetImg, x, y, w, h, tileRow){
+  const tileSize = 16;
+  // tileRow: which row of tiles to use (0=top/surface, 1=middle body)
+  const sy = tileRow * tileSize;
+  const scale = h / tileSize;
+  const drawTileW = tileSize * scale;
+  for(let tx = x; tx < x + w; tx += drawTileW){
+    const clipW = Math.min(drawTileW, x + w - tx);
+    const srcClipW = clipW / scale;
+    ctx.drawImage(tilesetImg, 0, sy, srcClipW, tileSize, tx, y, clipW, h);
+  }
+}
 
+function drawGroundStripAdv(gY){
+  if(GS.level === 1 && desertGroundReady){
+    // Desert level: use desert ground tileset — body row (row 1), surface row (row 0)
+    const displayH = 80;
+    const drawY = gY - 15;
+    drawTiledStrip(desertGroundImg, 0, drawY, worldW, displayH * 0.25, 0); // surface
+    drawTiledStrip(desertGroundImg, 0, drawY + displayH * 0.25, worldW, displayH * 0.75, 1); // body
+    return;
+  }
+  const sx = 300, sy = 310, sw = 940, sh = 318;
+  const displayH = 80;
+  const tileW    = Math.round(displayH * (sw / sh));
+  const drawY    = gY - 15;
   for(let tx = 0; tx < worldW; tx += tileW){
     ctx.drawImage(platGroundImg, sx, sy, sw, sh, tx, drawY, tileW, displayH);
   }
 }
 
 // ── Plateformes avancées (sprite-based) ──────────────────────
-// floating platform.png (1536×1024 RGBA) — contenu : x=184..1361 y=297..678 (1178×382)
 function drawPlatformAdv(p, lvl){
-  if(p.type!=='ground' && platFloatReady){
-    // Crop au contenu réel (sans transparent), ratio 3.08:1
-    const sx = 184, sy = 297, sw = 1178, sh = 382;
-    const drawW = p.w + 24;
-    const scale = drawW / sw;
-    const drawH = sh * scale;
-    const drawX = p.x - 12;
-    // Surface bois ≈14% du haut du contenu → aligner avec p.y (hitbox)
-    const drawY = p.y - drawH * 0.14;
-
-    ctx.drawImage(platFloatImg, sx, sy, sw, sh, drawX, drawY, drawW, drawH);
-
-  } else {
-    // Fallback procédural
-    if(p.type==='ground'){
-      ctx.fillStyle=lvl.ground;
-      ctx.fillRect(p.x,p.y,p.w,p.h);
-      ctx.fillStyle=lighten(lvl.ground);
-      ctx.fillRect(p.x,p.y,p.w,3);
-    } else {
-      ctx.fillStyle='#a07850';
-      ctx.fillRect(p.x,p.y,p.w,p.h);
-      ctx.fillStyle='rgba(255,255,255,.15)';
-      ctx.fillRect(p.x,p.y,p.w,2);
+  if(p.type!=='ground'){
+    if(GS.level === 1 && desertPlatReady){
+      // Desert platform: tile using desert platform tileset
+      const displayH = 20;
+      drawTiledStrip(desertPlatImg, p.x, p.y, p.w, displayH, 0);
+      return;
     }
+    if(platFloatReady){
+      const sx = 184, sy = 297, sw = 1178, sh = 382;
+      const drawW = p.w + 24;
+      const scale = drawW / sw;
+      const drawH = sh * scale;
+      const drawX = p.x - 12;
+      const drawY = p.y - drawH * 0.14;
+      ctx.drawImage(platFloatImg, sx, sy, sw, sh, drawX, drawY, drawW, drawH);
+      return;
+    }
+  }
+  // Fallback procédural
+  if(p.type==='ground'){
+    ctx.fillStyle=lvl.ground;
+    ctx.fillRect(p.x,p.y,p.w,p.h);
+    ctx.fillStyle=lighten(lvl.ground);
+    ctx.fillRect(p.x,p.y,p.w,3);
+  } else {
+    ctx.fillStyle='#a07850';
+    ctx.fillRect(p.x,p.y,p.w,p.h);
+    ctx.fillStyle='rgba(255,255,255,.15)';
+    ctx.fillRect(p.x,p.y,p.w,2);
   }
 }
 
@@ -1526,10 +1680,12 @@ function drawEnemy(e){
     if(e.type==='goblin')        drawGoblinAdv(bob);
     else if(e.type==='skeleton') drawSkeletonAdv(bob);
     else if(e.type==='dragon')   drawDragonAdv(bob);
+    else if(e.type==='mummy')    drawMummyAdv(bob);
   } else {
     if(e.type==='goblin')        drawGoblin(bob);
     else if(e.type==='skeleton') drawSkeleton(bob);
     else if(e.type==='dragon')   drawDragon(bob);
+    else if(e.type==='mummy')    drawMummy(bob);
   }
 
   ctx.restore();
@@ -1711,7 +1867,7 @@ function drawDragon(bob){
   ctx.restore();
 }
 
-function enemyEmoji(type){ return {goblin:'👺',skeleton:'💀',dragon:'🐉'}[type]||'👾'; }
+function enemyEmoji(type){ return {goblin:'👺',skeleton:'💀',dragon:'🐉',mummy:'🏺'}[type]||'👾'; }
 
 // ── HUD ───────────────────────────────────────────────────────
 function drawHUD(){
@@ -2269,14 +2425,30 @@ const CASTLE_STYLES = [
 ];
 
 function drawCastleSprite(ca, c){
-  // Drawing happens inside ctx.translate(-camX), so use world x directly.
-  const sx = ca.x;
   const sxScreen = ca.x - camX;
   if(sxScreen > W+240 || sxScreen + ca.w < -240) return;
 
+  const sx = ca.x;
+  const cx2 = sx + ca.w/2;
+  const gY2 = ca.y + ca.h;
+
+  const lvlDef = LEVELS[GS.level] || LEVELS[0];
+  const isPyramid = lvlDef.castleSprite === 'pyramid';
+
+  if(isPyramid){
+    drawPyramidCastle(ca, cx2, gY2);
+    drawCastlePrompt(cx2, ca);
+    return;
+  }
+
+  if(castleImgReady){
+    ctx.drawImage(castleImg, sx, ca.y, ca.w, ca.h);
+    drawCastlePrompt(cx2, ca);
+    return;
+  }
+
+  // Fallback procedural drawing if image not yet loaded
   const st = CASTLE_STYLES[Math.min(GS.level, CASTLE_STYLES.length-1)];
-  const gY2 = ca.y+ca.h;           // bas du château (sol)
-  const cx2 = sx+ca.w/2;           // centre horizontal
   const dW=52, dH=90;              // porte
   const dX = cx2-dW/2;
   const dTop = gY2-dH;
@@ -2396,6 +2568,69 @@ function drawCastleSprite(ca, c){
       ctx.fillStyle='#ffd700'; ctx.fillText('⬆ Entrer dans le château',cx2,ca.y-20);
       ctx.restore();
     }
+  }
+}
+
+function drawCastlePrompt(cx2, ca){
+  if(!QS.active && GS.screen==='game'){
+    const px = player.x + player.w/2;
+    if(Math.abs(px - cx2) < 95 && player.onGround){
+      ctx.save();
+      ctx.font='bold 13px Courier New'; ctx.textAlign='center';
+      ctx.fillStyle='rgba(0,0,0,.75)'; ctx.fillRect(cx2-108, ca.y-36, 216, 22);
+      ctx.fillStyle='#ffd700'; ctx.fillText('⬆ Entrer dans le château', cx2, ca.y-20);
+      ctx.restore();
+    }
+  }
+}
+
+function drawPyramidCastle(ca, cx2, gY2){
+  if(desertPyramidReady){
+    // Draw tiled pyramid stone walls
+    const tileSize = 16, scale = 3;
+    const drawTile = Math.round(tileSize * scale);
+    // Body
+    for(let tx = ca.x; tx < ca.x + ca.w; tx += drawTile){
+      for(let ty = ca.y; ty < gY2; ty += drawTile){
+        const clipW = Math.min(drawTile, ca.x + ca.w - tx);
+        const clipH = Math.min(drawTile, gY2 - ty);
+        ctx.drawImage(desertPyramidImg, 0, tileSize, tileSize * (clipW/drawTile), tileSize * (clipH/drawTile), tx, ty, clipW, clipH);
+      }
+    }
+    // Surface row
+    for(let tx = ca.x; tx < ca.x + ca.w; tx += drawTile){
+      const clipW = Math.min(drawTile, ca.x + ca.w - tx);
+      ctx.drawImage(desertPyramidImg, 0, 0, tileSize * (clipW/drawTile), tileSize, tx, ca.y, clipW, drawTile);
+    }
+  } else {
+    // Fallback — draw procedural pyramid
+    const sandy = '#c8a040', dark = '#a07820', door = '#1a0e04';
+    // Pyramid shape (trapezoid)
+    ctx.fillStyle = sandy;
+    ctx.beginPath();
+    ctx.moveTo(cx2 - ca.w*0.6, gY2);
+    ctx.lineTo(cx2 + ca.w*0.6, gY2);
+    ctx.lineTo(cx2 + ca.w*0.15, ca.y);
+    ctx.lineTo(cx2 - ca.w*0.15, ca.y);
+    ctx.fill();
+    // Stone lines
+    ctx.strokeStyle = dark; ctx.lineWidth = 1;
+    for(let row = 1; row < 7; row++){
+      const t = row / 7;
+      const rowY = ca.y + (gY2 - ca.y) * t;
+      const halfW = (ca.w * 0.15 + (ca.w * 0.45) * t);
+      ctx.beginPath(); ctx.moveTo(cx2 - halfW, rowY); ctx.lineTo(cx2 + halfW, rowY); ctx.stroke();
+    }
+    // Door
+    const dW = 38, dH = 60;
+    ctx.fillStyle = door;
+    ctx.fillRect(cx2 - dW/2, gY2 - dH, dW, dH);
+    ctx.beginPath(); ctx.arc(cx2, gY2 - dH, dW/2, Math.PI, 0); ctx.fill();
+  }
+  // Entrance steps
+  for(let i = 0; i < 3; i++){
+    ctx.fillStyle = i%2===0 ? '#d4b050' : '#a07820';
+    ctx.fillRect(cx2 - 22 + i*4, gY2 + i*4, 44 - i*8, 5);
   }
 }
 
