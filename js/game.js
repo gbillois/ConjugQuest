@@ -24,6 +24,11 @@ pillarImg.src = 'assets/pillar.png';
 let pillarReady = false;
 pillarImg.onload = () => { pillarReady = true; };
 
+const castleImg = new Image();
+castleImg.src = 'assets/castle.png';
+let castleImgReady = false;
+castleImg.onload = () => { castleImgReady = true; };
+
 // ════════════════════════════════════════════════════════════════
 //  PALADIN SPRITE LOADER
 // ════════════════════════════════════════════════════════════════
@@ -61,6 +66,31 @@ let paladinSpritesReady = false;
     PALADIN_SPRITES.jump.left.push(img('animations/jumping-2/south-west/frame_'+pad+'.png'));
   }
   Promise.all(toLoad).then(()=>{ paladinSpritesReady = true; });
+})();
+
+// ════════════════════════════════════════════════════════════════
+//  GOBLIN SPRITE LOADER
+// ════════════════════════════════════════════════════════════════
+
+const GOBLIN_BASE = 'assets/goblin/';
+const GOBLIN_SPRITES = { east: [], west: [] };
+let goblinSpritesReady = false;
+
+(function loadGoblinSprites(){
+  const toLoad = [];
+  function img(src){
+    const i = new Image();
+    const p = new Promise(r => { i.onload = r; i.onerror = r; });
+    i.src = GOBLIN_BASE + src;
+    toLoad.push(p);
+    return i;
+  }
+  for(let i=0;i<6;i++){
+    const pad = String(i).padStart(3,'0');
+    GOBLIN_SPRITES.east.push(img('walk/east/frame_'+pad+'.png'));
+    GOBLIN_SPRITES.west.push(img('walk/west/frame_'+pad+'.png'));
+  }
+  Promise.all(toLoad).then(()=>{ goblinSpritesReady = true; });
 })();
 
 // ════════════════════════════════════════════════════════════════
@@ -1206,13 +1236,12 @@ function drawPlayerAdvFallback(p){
 
 // ── Ennemi avancé ─────────────────────────────────────────────
 function drawGoblinAdv(bob){
-  const frame = Math.floor(Date.now()/300)%2;
-  const sc=2;
-  // massue (main droite, visible derrière)
-  ctx.fillStyle=PPAL.M; ctx.fillRect(14,-38+bob, 4,18);
-  ctx.fillStyle=PPAL.m; ctx.fillRect(11,-42+bob, 10,8);
-  ctx.fillStyle=PPAL.B; ctx.fillRect(13,-44+bob, 6,5);
-  pxDraw(ctx, SPR_GOBLIN[frame], -20, -44+bob, sc, false);
+  if(!goblinSpritesReady){ drawGoblin(bob); return; }
+  const frame = Math.floor(Date.now()/120) % 6;
+  // East frames only — parent ctx.scale(e.facing,1) handles left-facing mirror
+  const img = GOBLIN_SPRITES.east[frame];
+  // Sprite is 48×48; origin is bottom-center (0,0) from parent ctx.translate
+  ctx.drawImage(img, -24, -48+bob, 48, 48);
 }
 
 function drawSkeletonAdv(bob){
