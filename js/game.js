@@ -1330,13 +1330,13 @@ function drawPlayerAdvFallback(p){
 }
 
 // ── Ennemi avancé ─────────────────────────────────────────────
-function drawGoblinAdv(bob){
-  if(!goblinSpritesReady){ drawGoblin(bob); return; }
+function drawGoblinAdv(bob, facing){
+  if(!goblinSpritesReady){ ctx.scale(facing,1); drawGoblin(bob); return; }
   const frame = Math.floor(Date.now()/120) % 6;
-  // East frames only — parent ctx.scale(e.facing,1) handles left-facing mirror
-  const img = GOBLIN_SPRITES.east[frame];
+  // Use the correct directional sprite sheet — no ctx.scale mirroring needed
+  const sprites = (facing >= 0) ? GOBLIN_SPRITES.east : GOBLIN_SPRITES.west;
   // Draw at 2× (98×98); y adjusted so feet align with platform
-  ctx.drawImage(img, -49, -82+bob, 98, 98);
+  ctx.drawImage(sprites[frame], -49, -82+bob, 98, 98);
 }
 
 function drawSkeletonAdv(bob){
@@ -1360,12 +1360,13 @@ function drawDragonAdv(bob){
 }
 
 // ── Mummy (advanced — PixelLab sprites) ──────────────────────
-function drawMummyAdv(bob){
-  if(!mummySpritesReady){ drawMummy(bob); return; }
+function drawMummyAdv(bob, facing){
+  if(!mummySpritesReady){ ctx.scale(facing,1); drawMummy(bob); return; }
   const frame = Math.floor(Date.now()/160) % 6;
-  const img = MUMMY_SPRITES.east[frame];
+  // Use the correct directional sprite sheet — no ctx.scale mirroring needed
+  const sprites = (facing >= 0) ? MUMMY_SPRITES.east : MUMMY_SPRITES.west;
   // Draw at 2× (98×98); y adjusted so feet align with platform
-  ctx.drawImage(img, -49, -84+bob, 98, 98);
+  ctx.drawImage(sprites[frame], -49, -84+bob, 98, 98);
 }
 
 // ── Mummy (simple — pixel art fallback) ───────────────────────
@@ -1469,7 +1470,8 @@ function drawPlatformAdv(p, lvl){
       const scale = drawW / sw;
       const drawH = sh * scale;
       const drawX = p.x - 12;
-      const drawY = p.y - drawH * 0.14;
+      // 0.05 = measured fraction from sprite top to visual surface (rows 17-20 of 382)
+      const drawY = p.y - drawH * 0.05;
       ctx.drawImage(platFloatImg, sx, sy, sw, sh, drawX, drawY, drawW, drawH);
       return;
     }
@@ -1679,15 +1681,20 @@ function drawSkinPirate(leg, arm){
 function drawEnemy(e){
   ctx.save();
   ctx.translate(e.x+e.w/2, e.y+e.h);
-  ctx.scale(e.facing,1);
   const bob = Math.sin(Date.now()*.004+e.x*.01)*2;
 
   if(advStyle==='advanced'){
-    if(e.type==='goblin')        drawGoblinAdv(bob);
-    else if(e.type==='skeleton') drawSkeletonAdv(bob);
-    else if(e.type==='dragon')   drawDragonAdv(bob);
-    else if(e.type==='mummy')    drawMummyAdv(bob);
+    // Goblin & mummy have real directional sprite sheets — pass facing, no scale
+    if(e.type==='goblin')        drawGoblinAdv(bob, e.facing);
+    else if(e.type==='mummy')    drawMummyAdv(bob, e.facing);
+    else {
+      // Pixel-art enemies use ctx.scale for left/right mirroring
+      ctx.scale(e.facing, 1);
+      if(e.type==='skeleton') drawSkeletonAdv(bob);
+      else if(e.type==='dragon')   drawDragonAdv(bob);
+    }
   } else {
+    ctx.scale(e.facing, 1);
     if(e.type==='goblin')        drawGoblin(bob);
     else if(e.type==='skeleton') drawSkeleton(bob);
     else if(e.type==='dragon')   drawDragon(bob);
