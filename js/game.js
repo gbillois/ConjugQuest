@@ -1465,7 +1465,7 @@ function drawBiomeEnemyAdv(loader, fallbackColor, bob, facing=1){
     return;
   }
   const frame = Math.floor(Date.now()/150) % 6;
-  const dir = facing >= 0 ? 'east' : 'west';
+  const dir = facing >= 0 ? 'west' : 'east';
   const frames = loader.sprites[dir];
   const sideSprite = frames[frame];
   const eastSprite = loader.sprites.east[frame];

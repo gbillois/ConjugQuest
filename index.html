@@ -82,14 +82,21 @@ canvas{position:absolute;top:0;left:0;width:100%;height:100%;image-rendering:pix
 }
 .dpad{display:flex;gap:10px;pointer-events:all;}
 .cbtn{
-  width:68px;height:68px;border-radius:50%;
-  background:rgba(0,0,0,0.6);border:3px solid rgba(255,255,255,0.4);
-  color:#fff;font-size:24px;display:flex;align-items:center;justify-content:center;
+  background-color:transparent;
+  background-position:center;
+  background-repeat:no-repeat;
+  background-size:contain;
+  border:0;
+  display:flex;align-items:center;justify-content:center;
   cursor:pointer;user-select:none;-webkit-user-select:none;
-  pointer-events:all;touch-action:none;transition:background .1s;
+  pointer-events:all;touch-action:none;transition:transform .08s, filter .08s;
 }
-.cbtn.pressed{background:rgba(255,255,255,0.28);}
-#jumpBtn{width:78px;height:78px;background:rgba(200,70,0,.75);border-color:rgba(255,150,50,.85);font-size:26px;}
+.cbtn.pressed{filter:brightness(1.22);transform:translateY(1px);}
+#leftBtn,#rightBtn{width:96px;height:48px;}
+#jumpBtn{width:78px;height:78px;}
+#leftBtn{background-image:url('assets/left.png');}
+#rightBtn{background-image:url('assets/right.png');}
+#jumpBtn{background-image:url('assets/up.png');}
 
 /* ── Question modal ── */
 #qModal{
@@ -360,10 +367,10 @@ canvas{position:absolute;top:0;left:0;width:100%;height:100%;image-rendering:pix
 <!-- Touch controls (hors du canvas, sous le jeu) -->
 <div id="ctrl">
   <div class="dpad">
-    <div class="cbtn" id="leftBtn">◀</div>
-    <div class="cbtn" id="rightBtn">▶</div>
+    <div class="cbtn" id="leftBtn" aria-label="Gauche"></div>
+    <div class="cbtn" id="rightBtn" aria-label="Droite"></div>
   </div>
-  <div class="cbtn" id="jumpBtn">▲</div>
+  <div class="cbtn" id="jumpBtn" aria-label="Saut"></div>
 </div>
 </div><!-- #gameContainer -->
 
