@@ -534,9 +534,10 @@ function renderShop(){
     else if(owned){ btnLabel='Équiper'; }
     else if(canBuy){ btnLabel=`Acheter`; }
     else{ btnClass+=' owned'; btnLabel=`🪙 ${s.cost}`; btnDisabled='disabled'; }
-    const thumb = s.img
-      ? `<img src="${s.img}" style="width:48px;height:48px;image-rendering:pixelated;object-fit:contain;" alt="${s.name}">`
+    const inner = s.img
+      ? `<img src="${s.img}" alt="${s.name}">`
       : `<span class="shopEmoji">${s.emoji}</span>`;
+    const thumb = `<div class="shopThumb">${inner}</div>`;
     return `<div class="shopCard${equipped?' active':''}">
       ${thumb}
       <div class="shopInfo"><b>${s.name}</b><br><small>${s.desc}${s.cost>0&&!owned?' · 🪙'+s.cost:''}</small></div>
