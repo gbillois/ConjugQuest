@@ -58,15 +58,25 @@ castleImg.src = 'assets/castle.png';
 let castleImgReady = false;
 castleImg.onload = () => { castleImgReady = true; };
 
-const gateLockedImg = new Image();
-gateLockedImg.src = 'assets/gate-locked.png';
-let gateLockedImgReady = false;
-gateLockedImg.onload = () => { gateLockedImgReady = true; };
-
-const gateUnlockedImg = new Image();
-gateUnlockedImg.src = 'assets/gate-unlocked.png';
-let gateUnlockedImgReady = false;
-gateUnlockedImg.onload = () => { gateUnlockedImgReady = true; };
+const BIOMES = ['forest','desert','mountain','snow','desolation'];
+const biomeImages = {};
+BIOMES.forEach(biome => {
+  function bi(key, file){ const i = new Image(); i.src = `assets/biomes/${biome}/${file}`; return i; }
+  biomeImages[biome] = {
+    castle:    bi('castle',    'castle.png'),
+    locked:    bi('locked',    'gate-locked.png'),
+    unlocked:  bi('unlocked',  'gate-unlocked.png'),
+    ground:    bi('ground',    'ground-tileset.png'),
+    platform1: bi('platform1', 'platform1-tileset.png'),
+    platform2: bi('platform2', 'platform2-tileset.png'),
+  };
+});
+function getBiomeImg(biome, key){
+  const imgs = biomeImages[biome] || biomeImages['forest'];
+  const img  = imgs[key];
+  return img && img.complete && img.naturalWidth > 0 ? img : null;
+}
+function getGateImg(biome, isLocked){ return getBiomeImg(biome, isLocked ? 'locked' : 'unlocked'); }
 
 // ════════════════════════════════════════════════════════════════
 //  HERO SPRITE LOADER (knight / mage / ninja / pirate)
@@ -184,6 +194,41 @@ let mummySpritesReady = false;
   }
   Promise.all(toLoad).then(()=>{ mummySpritesReady = true; });
 })();
+
+// ════════════════════════════════════════════════════════════════
+//  BIOME ENEMY SPRITE LOADERS
+// ════════════════════════════════════════════════════════════════
+
+function makeSpriteLoader(base, frames){
+  const sprites = { east: [], west: [] };
+  let ready = false;
+  (function(){
+    const toLoad = [];
+    function img(src){
+      const i = new Image();
+      const p = new Promise(r => { i.onload = r; i.onerror = r; });
+      i.src = base + src;
+      toLoad.push(p);
+      return i;
+    }
+    for(let i=0;i<frames;i++){
+      const pad = String(i).padStart(3,'0');
+      sprites.east.push(img('walk/east/frame_'+pad+'.png'));
+      sprites.west.push(img('walk/west/frame_'+pad+'.png'));
+    }
+    Promise.all(toLoad).then(()=>{ ready = true; });
+  })();
+  return { sprites, isReady(){ return ready; } };
+}
+
+const FOREST_SPRITE_LOADER    = makeSpriteLoader('assets/enemies/forest-sprite/', 6);
+const DESERT_SCORPION_LOADER  = makeSpriteLoader('assets/enemies/desert-scorpion/', 6);
+const MOUNTAIN_TROLL_LOADER   = makeSpriteLoader('assets/enemies/mountain-troll/', 6);
+const MOUNTAIN_DWARF_LOADER   = makeSpriteLoader('assets/enemies/mountain-dwarf/', 6);
+const FROST_ZOMBIE_LOADER     = makeSpriteLoader('assets/enemies/frost-zombie/', 6);
+const SNOW_YETI_LOADER        = makeSpriteLoader('assets/enemies/snow-yeti/', 6);
+const DESOLATION_SKELETON_LOADER = makeSpriteLoader('assets/enemies/desolation-skeleton/', 6);
+const DESOLATION_WRAITH_LOADER   = makeSpriteLoader('assets/enemies/desolation-wraith/', 6);
 
 // ════════════════════════════════════════════════════════════════
 //  CANVAS
@@ -1270,10 +1315,10 @@ function drawFlag(f){
   const killed  = enemies.filter(e=>!e.alive).length;
   const unlocked = totalEn === 0 || killed / totalEn >= 0.75;
 
-  if(unlocked && gateUnlockedImgReady){
-    ctx.drawImage(gateUnlockedImg, f.x, f.y, f.w, f.h);
-  } else if(!unlocked && gateLockedImgReady){
-    ctx.drawImage(gateLockedImg, f.x, f.y, f.w, f.h);
+  const biome = (LEVELS[GS.level] || LEVELS[0]).biome || 'forest';
+  const gateImg = getGateImg(biome, !unlocked);
+  if(gateImg){
+    ctx.drawImage(gateImg, f.x, f.y, f.w, f.h);
   } else {
     // Fallback canvas gate
     ctx.fillStyle = unlocked ? '#2a6e2a' : '#8b2020';
@@ -1418,6 +1463,25 @@ function drawMummyAdv(bob){
   ctx.drawImage(img, -48, -96+bob, 96, 96);
 }
 
+// ── Biome enemies (PixelLab sprites) ──────────────────────────
+function drawBiomeEnemyAdv(loader, fallbackColor, bob){
+  if(!loader.isReady()){
+    ctx.fillStyle = fallbackColor;
+    ctx.fillRect(-24, -48+bob, 48, 48);
+    return;
+  }
+  const frame = Math.floor(Date.now()/150) % 6;
+  ctx.drawImage(loader.sprites.east[frame], -48, -96+bob, 96, 96);
+}
+function drawForestSpriteAdv(bob)       { drawBiomeEnemyAdv(FOREST_SPRITE_LOADER,    '#2d7a2d', bob); }
+function drawDesertScorpionAdv(bob)     { drawBiomeEnemyAdv(DESERT_SCORPION_LOADER,  '#c8a040', bob); }
+function drawMountainTrollAdv(bob)      { drawBiomeEnemyAdv(MOUNTAIN_TROLL_LOADER,   '#5a5a5a', bob); }
+function drawMountainDwarfAdv(bob)      { drawBiomeEnemyAdv(MOUNTAIN_DWARF_LOADER,   '#7a6040', bob); }
+function drawFrostZombieAdv(bob)        { drawBiomeEnemyAdv(FROST_ZOMBIE_LOADER,     '#a0c8e0', bob); }
+function drawSnowYetiAdv(bob)           { drawBiomeEnemyAdv(SNOW_YETI_LOADER,        '#d0e8ff', bob); }
+function drawDesolationSkeletonAdv(bob) { drawBiomeEnemyAdv(DESOLATION_SKELETON_LOADER, '#c0b080', bob); }
+function drawDesolationWraithAdv(bob)   { drawBiomeEnemyAdv(DESOLATION_WRAITH_LOADER,   '#4a2060', bob); }
+
 // ── Mummy (simple — pixel art fallback) ───────────────────────
 function drawMummy(bob){
   // Ombre
@@ -1487,12 +1551,13 @@ function drawTiledStrip(tilesetImg, x, y, w, h, tileRow){
 }
 
 function drawGroundStripAdv(gY){
-  if(GS.level === 1 && desertGroundReady){
-    // Desert level: use desert ground tileset — body row (row 1), surface row (row 0)
+  const biome = (LEVELS[GS.level] || LEVELS[0]).biome || 'forest';
+  const groundImg = getBiomeImg(biome, 'ground');
+  if(groundImg){
     const displayH = 80;
     const drawY = gY - 15;
-    drawTiledStrip(desertGroundImg, 0, drawY, worldW, displayH * 0.25, 0); // surface
-    drawTiledStrip(desertGroundImg, 0, drawY + displayH * 0.25, worldW, displayH * 0.75, 1); // body
+    drawTiledStrip(groundImg, 0, drawY, worldW, displayH * 0.25, 0); // surface
+    drawTiledStrip(groundImg, 0, drawY + displayH * 0.25, worldW, displayH * 0.75, 1); // body
     return;
   }
   const sx = 300, sy = 310, sw = 940, sh = 318;
@@ -1507,10 +1572,10 @@ function drawGroundStripAdv(gY){
 // ── Plateformes avancées (sprite-based) ──────────────────────
 function drawPlatformAdv(p, lvl){
   if(p.type!=='ground'){
-    if(GS.level === 1 && desertPlatReady){
-      // Desert platform: tile using desert platform tileset
-      const displayH = 20;
-      drawTiledStrip(desertPlatImg, p.x, p.y, p.w, displayH, 0);
+    const biome3 = (LEVELS[GS.level] || LEVELS[0]).biome || 'forest';
+    const plat1Img = getBiomeImg(biome3, 'platform1');
+    if(plat1Img){
+      drawTiledStrip(plat1Img, p.x, p.y, p.w, 20, 0);
       return;
     }
     if(platFloatReady){
@@ -1733,15 +1798,31 @@ function drawEnemy(e){
   const bob = Math.sin(Date.now()*.004+e.x*.01)*2;
 
   if(advStyle==='advanced'){
-    if(e.type==='goblin')        drawGoblinAdv(bob);
-    else if(e.type==='skeleton') drawSkeletonAdv(bob);
-    else if(e.type==='dragon')   drawDragonAdv(bob);
-    else if(e.type==='mummy')    drawMummyAdv(bob);
+    if(e.type==='goblin')                  drawGoblinAdv(bob);
+    else if(e.type==='skeleton')           drawSkeletonAdv(bob);
+    else if(e.type==='dragon')             drawDragonAdv(bob);
+    else if(e.type==='mummy')              drawMummyAdv(bob);
+    else if(e.type==='forest-sprite')      drawForestSpriteAdv(bob);
+    else if(e.type==='desert-scorpion')    drawDesertScorpionAdv(bob);
+    else if(e.type==='mountain-troll')     drawMountainTrollAdv(bob);
+    else if(e.type==='mountain-dwarf')     drawMountainDwarfAdv(bob);
+    else if(e.type==='frost-zombie')       drawFrostZombieAdv(bob);
+    else if(e.type==='snow-yeti')          drawSnowYetiAdv(bob);
+    else if(e.type==='desolation-skeleton') drawDesolationSkeletonAdv(bob);
+    else if(e.type==='desolation-wraith')  drawDesolationWraithAdv(bob);
   } else {
     if(e.type==='goblin')        drawGoblin(bob);
     else if(e.type==='skeleton') drawSkeleton(bob);
     else if(e.type==='dragon')   drawDragon(bob);
     else if(e.type==='mummy')    drawMummy(bob);
+    else if(e.type==='forest-sprite')      drawForestSpriteAdv(bob);
+    else if(e.type==='desert-scorpion')    drawDesertScorpionAdv(bob);
+    else if(e.type==='mountain-troll')     drawMountainTrollAdv(bob);
+    else if(e.type==='mountain-dwarf')     drawMountainDwarfAdv(bob);
+    else if(e.type==='frost-zombie')       drawFrostZombieAdv(bob);
+    else if(e.type==='snow-yeti')          drawSnowYetiAdv(bob);
+    else if(e.type==='desolation-skeleton') drawDesolationSkeletonAdv(bob);
+    else if(e.type==='desolation-wraith')  drawDesolationWraithAdv(bob);
   }
 
   ctx.restore();
@@ -1923,7 +2004,7 @@ function drawDragon(bob){
   ctx.restore();
 }
 
-function enemyEmoji(type){ return {goblin:'👺',skeleton:'💀',dragon:'🐉',mummy:'🏺'}[type]||'👾'; }
+function enemyEmoji(type){ return {goblin:'👺',skeleton:'💀',dragon:'🐉',mummy:'🏺','forest-sprite':'🧚','desert-scorpion':'🦂','mountain-troll':'🗿','mountain-dwarf':'⛏️','frost-zombie':'🧟','snow-yeti':'❄️','desolation-skeleton':'💀','desolation-wraith':'👻'}[type]||'👾'; }
 
 // ── HUD ───────────────────────────────────────────────────────
 function drawHUD(){
@@ -2497,6 +2578,13 @@ function drawCastleSprite(ca, c){
     return;
   }
 
+  const biome2 = (LEVELS[GS.level] || LEVELS[0]).biome || 'forest';
+  const biomeCastleImg = getBiomeImg(biome2, 'castle');
+  if(biomeCastleImg){
+    ctx.drawImage(biomeCastleImg, sx, ca.y, ca.w, ca.h);
+    drawCastlePrompt(cx2, ca);
+    return;
+  }
   if(castleImgReady){
     ctx.drawImage(castleImg, sx, ca.y, ca.w, ca.h);
     drawCastlePrompt(cx2, ca);
