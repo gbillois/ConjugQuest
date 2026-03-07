@@ -99,9 +99,14 @@ function loadHeroSprites(id, runFrames, jumpFrames){
     return {i, p};
   }
 
-  // Idle sprites — mark ready as soon as these load
-  const {i: idleR, p: pIdleR} = imgPromise('rotations/east.png');
-  const {i: idleL, p: pIdleL} = imgPromise('rotations/west.png');
+  // Idle sprites — use south-east/south-west rotations when available (knight)
+  // because running animation also uses south-east angle → consistent visual
+  // Mage/ninja/pirate only have east/west rotations, so fall back to those
+  const HAS_SE_IDLE = { knight: true };
+  const idleRightSrc = HAS_SE_IDLE[id] ? 'rotations/south-east.png' : 'rotations/east.png';
+  const idleLeftSrc  = HAS_SE_IDLE[id] ? 'rotations/south-west.png' : 'rotations/west.png';
+  const {i: idleR, p: pIdleR} = imgPromise(idleRightSrc);
+  const {i: idleL, p: pIdleL} = imgPromise(idleLeftSrc);
   spr.idle.right = idleR;
   spr.idle.left  = idleL;
   Promise.all([pIdleR, pIdleL]).then(()=>{
@@ -826,7 +831,7 @@ function updatePhysics(dt){
       castlePlayerSavedX = player.x;
       castlePlayer.x = 50; castlePlayer.y = H-55-castlePlayer.h;
       castlePlayer.vx=0; castlePlayer.vy=0;
-      castlePlayer.onGround=true; castlePlayer.facing=1; castlePlayer.walkT=0;
+      castlePlayer.onGround=true; castlePlayer.facing=player.facing; castlePlayer.walkT=0;
       CQ.active=false; CQ.streak=0;
       GS.screen='castle';
       return;
