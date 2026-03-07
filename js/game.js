@@ -58,6 +58,16 @@ castleImg.src = 'assets/castle.png';
 let castleImgReady = false;
 castleImg.onload = () => { castleImgReady = true; };
 
+const gateLockedImg = new Image();
+gateLockedImg.src = 'assets/gate-locked.png';
+let gateLockedImgReady = false;
+gateLockedImg.onload = () => { gateLockedImgReady = true; };
+
+const gateUnlockedImg = new Image();
+gateUnlockedImg.src = 'assets/gate-unlocked.png';
+let gateUnlockedImgReady = false;
+gateUnlockedImg.onload = () => { gateUnlockedImgReady = true; };
+
 // ════════════════════════════════════════════════════════════════
 //  HERO SPRITE LOADER (knight / mage / ninja / pirate)
 // ════════════════════════════════════════════════════════════════
@@ -390,8 +400,8 @@ function generateLevel(lvl) {
     platforms.push({ x:topX, y:gY-ph2, w:topW, h:14, type:'platform' });
   }
 
-  // Drapeau
-  flag = { x: worldW-140, y: gY-100, w:30, h:100 };
+  // Portail de fin de niveau
+  flag = { x: worldW-160, y: gY-80, w:80, h:80 };
   castleRewardCoins = 0;
 
   // Player spawn
@@ -973,9 +983,13 @@ function updatePhysics(dt){
 
   updateStarGains(dt);
 
-  // Drapeau
+  // Portail de fin de niveau (nécessite 75% ennemis éliminés)
   if(flag && rectsTouch(player,{x:flag.x,y:flag.y,w:flag.w,h:flag.h})){
-    triggerLevelComplete();
+    const _total = enemies.length;
+    const _killed = enemies.filter(e=>!e.alive).length;
+    if(_total === 0 || _killed / _total >= 0.75){
+      triggerLevelComplete();
+    }
   }
 }
 
@@ -1250,20 +1264,43 @@ function starPath(cx,cy,r1,r2,pts){
   ctx.closePath();
 }
 
-// ── Drapeau ───────────────────────────────────────────────────
+// ── Portail de fin de niveau ──────────────────────────────────
 function drawFlag(f){
-  ctx.fillStyle='#888';
-  ctx.fillRect(f.x+4,f.y,5,f.h);
-  const w=Math.sin(Date.now()*.003)*4;
-  ctx.fillStyle='#ef4444';
-  ctx.beginPath();
-  ctx.moveTo(f.x+9,f.y);
-  ctx.lineTo(f.x+9+26,f.y+11+w);
-  ctx.lineTo(f.x+9+22,f.y+22+w*.6);
-  ctx.lineTo(f.x+9,f.y+22);
-  ctx.fill();
-  ctx.fillStyle='#555';
-  ctx.fillRect(f.x,f.y+f.h,22,8);
+  const totalEn = enemies.length;
+  const killed  = enemies.filter(e=>!e.alive).length;
+  const unlocked = totalEn === 0 || killed / totalEn >= 0.75;
+
+  if(unlocked && gateUnlockedImgReady){
+    ctx.drawImage(gateUnlockedImg, f.x, f.y, f.w, f.h);
+  } else if(!unlocked && gateLockedImgReady){
+    ctx.drawImage(gateLockedImg, f.x, f.y, f.w, f.h);
+  } else {
+    // Fallback canvas gate
+    ctx.fillStyle = unlocked ? '#2a6e2a' : '#8b2020';
+    ctx.fillRect(f.x+8, f.y, f.w-16, f.h);
+    ctx.fillStyle = '#555';
+    ctx.fillRect(f.x+2, f.y, 6, f.h);
+    ctx.fillRect(f.x+f.w-8, f.y, 6, f.h);
+    if(!unlocked){
+      ctx.fillStyle='#ffd700';
+      ctx.fillRect(f.x+f.w/2-6, f.y+f.h/2-6, 12, 12);
+    }
+  }
+
+  // Compteur d'ennemis si portail verrouillé
+  if(!unlocked){
+    const needed = Math.ceil(totalEn * 0.75);
+    ctx.save();
+    ctx.font = 'bold 12px Courier New';
+    ctx.textAlign = 'center';
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 3;
+    const label = `${killed}/${needed}`;
+    ctx.strokeText(label, f.x + f.w/2, f.y - 6);
+    ctx.fillStyle = '#fff';
+    ctx.fillText(label, f.x + f.w/2, f.y - 6);
+    ctx.restore();
+  }
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -1289,22 +1326,41 @@ function drawPlayerAdv(p){
   const dir = p.facing>=0 ? 'right' : 'left';
   let sprite;
 
+  let flipX = false;
+
   if(!p.onGround){
+    // Prefer directional jump frame; fall back to left frames mirrored
     const jFrames = spr.jump[dir];
+    const jFramesL = spr.jump.left;
     const t = Math.min(1, Math.max(0, (p.vy - JUMP_V) / (-JUMP_V * 2)));
     const fi = Math.min(jFrames.length-1, Math.floor(t * jFrames.length));
-    sprite = (jFrames[fi] && jFrames[fi].naturalWidth) ? jFrames[fi] : spr.idle[dir];
+    if(jFrames[fi] && jFrames[fi].naturalWidth){
+      sprite = jFrames[fi];
+    } else if(dir === 'right' && jFramesL[fi] && jFramesL[fi].naturalWidth){
+      sprite = jFramesL[fi]; flipX = true;
+    } else {
+      sprite = spr.idle[dir];
+    }
   } else if(Math.abs(p.vx) > 0.5){
+    // Prefer directional run frame; fall back to left frames mirrored
     const rFrames = spr.run[dir];
-    const fi = Math.floor(p.walkT * 1.5) % rFrames.length;
-    sprite = (rFrames[fi] && rFrames[fi].naturalWidth) ? rFrames[fi] : spr.idle[dir];
+    const rFramesL = spr.run.left;
+    const fi = Math.floor(p.walkT * 1.5) % Math.max(rFrames.length, 1);
+    if(rFrames[fi] && rFrames[fi].naturalWidth){
+      sprite = rFrames[fi];
+    } else if(dir === 'right' && rFramesL[fi] && rFramesL[fi].naturalWidth){
+      sprite = rFramesL[fi]; flipX = true;
+    } else {
+      sprite = spr.idle[dir];
+    }
   } else {
     sprite = spr.idle[dir];
   }
 
-  // Draw sprite at 2× size (112×112)
+  // Draw sprite at 2× size (112×112), mirroring if needed
   const drawH = 112;
   const drawW = 112;
+  if(flipX) ctx.scale(-1, 1);
   ctx.drawImage(sprite, -drawW/2, -drawH, drawW, drawH);
 
   ctx.restore();
