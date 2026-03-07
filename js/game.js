@@ -443,13 +443,13 @@ function generateLevel(lvl) {
     pillars.push({ x:px, y:gY-ph2, w:pw, h:ph2+60 });
     const topW = Math.round((ph2+60) * 0.56);
     const topX = px + pw/2 - topW/2;
-    platforms.push({ x:topX, y:gY-ph2, w:topW, h:14, type:'platform' });
+    platforms.push({ x:topX, y:gY-ph2, w:topW, h:14, type:'platform', nosprite:true });
   }
 
   // Château final de niveau (verrouillé/déverrouillé)
   const lockedGate = readyImage(commonLevelImages.castleLocked);
   const gateRatio = lockedGate ? (lockedGate.width / lockedGate.height) : 1.6;
-  const endH = 122;
+  const endH = 244;
   const endW = Math.round(endH * gateRatio);
   flag = { x: worldW - 240, y: gY - endH + 4, w: endW, h: endH };
   castleRewardCoins = 0;
@@ -1122,7 +1122,8 @@ function updatePhysics(dt){
   updateStarGains(dt);
 
   // Portail de fin de niveau (nécessite 75% ennemis éliminés)
-  if(flag && rectsTouch(player,{x:flag.x,y:flag.y,w:flag.w,h:flag.h})){
+  // Activé quand le centre du joueur atteint le centre horizontal de la porte
+  if(flag && Math.abs((player.x+player.w/2)-(flag.x+flag.w/2)) < 30 && player.y+player.h > flag.y && player.y < flag.y+flag.h){
     const _total = enemies.length;
     const _killed = enemies.filter(e=>!e.alive).length;
     if(_total === 0 || _killed / _total >= 0.75){
@@ -1271,6 +1272,7 @@ function drawPlatform(p, lvl){
     ctx.fillStyle = lighten(lvl.ground);
     for(let gx=p.x+4;gx<p.x+p.w-4;gx+=9) ctx.fillRect(gx,p.y-3,3,5);
   } else {
+    if(p.nosprite) return;
     ctx.fillStyle = lvl.plat;
     ctx.fillRect(p.x,p.y,p.w,p.h);
     ctx.fillStyle = lighten(lvl.plat);
@@ -1560,7 +1562,7 @@ function drawBiomeEnemyAdv(loader, fallbackColor, bob, facing=1){
     return;
   }
   const frame = Math.floor(Date.now()/150) % 6;
-  const dir = facing >= 0 ? 'west' : 'east';
+  const dir = facing >= 0 ? 'east' : 'west';
   const frames = loader.sprites[dir];
   const sideSprite = frames[frame];
   const eastSprite = loader.sprites.east[frame];
@@ -1644,7 +1646,7 @@ function drawBgAdv(c){
 function drawRepeatedSprite(img, x, y, width, targetH){
   if(!img || targetH <= 0 || width <= 0) return;
   const tileW = Math.max(1, Math.round(targetH * (img.width / img.height)));
-  for(let tx = x; tx < x + width; tx += tileW){
+  for(let tx = x; tx < x + width; tx += Math.max(1, tileW - 2)){
     const drawW = Math.min(tileW, x + width - tx);
     const srcW = Math.max(1, Math.round(img.width * (drawW / tileW)));
     ctx.drawImage(img, 0, 0, srcW, img.height, tx, y, drawW, targetH);
@@ -1668,7 +1670,7 @@ function drawGroundStripAdv(gY){
     const topH = 42;
     const bodyH = 28;
     drawRepeatedSprite(topImg, 0, gY - 24, worldW, topH);
-    for(let ty = gY + 14; ty < H + bodyH; ty += bodyH - 1){
+    for(let ty = gY + 14; ty < H + bodyH; ty += bodyH - 3){
       drawRepeatedSprite(bodyImg, 0, ty, worldW, bodyH);
     }
     return;
@@ -1689,6 +1691,7 @@ function drawPlatformAdv(p, lvl){
   }
 
   if(p.type !== 'ground'){
+    if(p.nosprite) return;
     const floatingImg = getBiomeImg(getLevelBiome(), 'floating');
     if(floatingImg){
       const drawW = p.w + 22;
