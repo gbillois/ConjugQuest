@@ -2,91 +2,66 @@
 
 const VERSION = 'v1.8';
 
-// ── Background images (per level) ─────────────────────────────
-const BG_SRCS = [
-  'assets/ChatGPT Image Mar 6, 2026, 04_18_59 PM.png', // level 1
-  'assets/castle-desert-square.png',                    // level 2
-];
-const bgImages = BG_SRCS.map(src => {
-  const i = new Image(); i.src = src; return i;
-});
-// Alias for legacy code
-const bgImage = bgImages[0];
-let bgImageReady = false;
-bgImage.onload = () => { bgImageReady = true; };
-bgImages.forEach(i => { if(i !== bgImage) i.onload = ()=>{}; });
+// ── Level visual assets ────────────────────────────────────────
+const BIOMES = ['forest', 'desert', 'snow', 'mountain', 'desolation'];
+const LEVELS_BASE = 'assets/levels';
 
-function getLevelBgImage(lvlIdx){
-  const i = bgImages[lvlIdx] || bgImages[0];
-  return i.complete && i.naturalWidth > 0 ? i : (bgImageReady ? bgImage : null);
+function loadImage(src){
+  const img = new Image();
+  img.src = src;
+  return img;
 }
 
-// ── Desert tilesets ────────────────────────────────────────────
-const desertGroundImg = new Image();
-desertGroundImg.src = 'assets/desert/ground-tileset.png';
-let desertGroundReady = false;
-desertGroundImg.onload = () => { desertGroundReady = true; };
-
-const desertPlatImg = new Image();
-desertPlatImg.src = 'assets/desert/platform-tileset.png';
-let desertPlatReady = false;
-desertPlatImg.onload = () => { desertPlatReady = true; };
-
-const desertPyramidImg = new Image();
-desertPyramidImg.src = 'assets/desert/pyramid-tileset.png';
-let desertPyramidReady = false;
-desertPyramidImg.onload = () => { desertPyramidReady = true; };
-
-// ── Platform sprites ──────────────────────────────────────────
-const platGroundImg = new Image();
-platGroundImg.src = 'assets/ground platform.png';
-let platGroundReady = false;
-platGroundImg.onload = () => { platGroundReady = true; };
-
-const platFloatImg = new Image();
-platFloatImg.src = 'assets/floating platform.png';
-let platFloatReady = false;
-platFloatImg.onload = () => { platFloatReady = true; };
-
-const pillarImg = new Image();
-pillarImg.src = 'assets/pillar.png';
-let pillarReady = false;
-pillarImg.onload = () => { pillarReady = true; };
-
-const castleImg = new Image();
-castleImg.src = 'assets/castle.png';
-let castleImgReady = false;
-castleImg.onload = () => { castleImgReady = true; };
-
-const BIOMES = ['forest','desert','mountain','snow','desolation'];
 const biomeImages = {};
-BIOMES.forEach(biome => {
-  function bi(key, file){ const i = new Image(); i.src = `assets/biomes/${biome}/${file}`; return i; }
+BIOMES.forEach((biome) => {
   biomeImages[biome] = {
-    castle:    bi('castle',    'castle.png'),
-    locked:    bi('locked',    'gate-locked.png'),
-    unlocked:  bi('unlocked',  'gate-unlocked.png'),
-    ground:    bi('ground',    'ground-tileset.png'),
-    platform1: bi('platform1', 'platform1-tileset.png'),
-    platform2: bi('platform2', 'platform2-tileset.png'),
+    background:     loadImage(`${LEVELS_BASE}/${biome}/background.png`),
+    floating:       loadImage(`${LEVELS_BASE}/${biome}/floating-platform.png`),
+    groundPlatform: loadImage(`${LEVELS_BASE}/${biome}/ground-platform.png`),
+    ground:         loadImage(`${LEVELS_BASE}/${biome}/ground.png`),
+    pillar:         loadImage(`${LEVELS_BASE}/${biome}/pillar.png`),
   };
 });
-function getBiomeImg(biome, key){
-  const imgs = biomeImages[biome] || biomeImages['forest'];
-  const img  = imgs[key];
+
+const commonLevelImages = {
+  tower:          loadImage(`${LEVELS_BASE}/common/tower.png`),
+  towerInside:    loadImage(`${LEVELS_BASE}/common/tower-inside.png`),
+  castleLocked:   loadImage(`${LEVELS_BASE}/common/castle-locked.png`),
+  castleUnlocked: loadImage(`${LEVELS_BASE}/common/castle-unlocked.png`),
+};
+
+function readyImage(img){
   return img && img.complete && img.naturalWidth > 0 ? img : null;
 }
-function getGateImg(biome, isLocked){ return getBiomeImg(biome, isLocked ? 'locked' : 'unlocked'); }
+
+function getBiomeImg(biome, key){
+  const imgs = biomeImages[biome] || biomeImages.forest;
+  return readyImage(imgs[key]);
+}
+
+function getLevelBiome(lvlIdx){
+  const idx = typeof lvlIdx === 'number' ? lvlIdx : (typeof GS !== 'undefined' ? GS.level : 0);
+  const lvl = LEVELS[idx] || LEVELS[0];
+  return (lvl && lvl.biome) || 'forest';
+}
+
+function getLevelBgImage(lvlIdx){
+  return getBiomeImg(getLevelBiome(lvlIdx), 'background');
+}
+
+function getGateImg(isLocked){
+  return readyImage(isLocked ? commonLevelImages.castleLocked : commonLevelImages.castleUnlocked);
+}
 
 // ════════════════════════════════════════════════════════════════
 //  HERO SPRITE LOADER (knight / mage / ninja / pirate)
 // ════════════════════════════════════════════════════════════════
 
 const HERO_BASES = {
-  knight: 'assets/brave_paladin/',
-  mage:   'assets/hero_mage/',
-  ninja:  'assets/hero_ninja/',
-  pirate: 'assets/hero_pirate/',
+  knight: 'assets/heroes/paladin/',
+  mage:   'assets/heroes/mage/',
+  ninja:  'assets/heroes/ninja/',
+  pirate: 'assets/heroes/pirate/',
 };
 const HERO_SPRITES = {
   knight: { idle:{}, run:{}, jump:{}, ready: false },
@@ -199,7 +174,7 @@ let mummySpritesReady = false;
 //  BIOME ENEMY SPRITE LOADERS
 // ════════════════════════════════════════════════════════════════
 
-function makeSpriteLoader(base, frames){
+function makeSpriteLoader(base, frames, walkDir='animations/walking-6-frames'){
   const sprites = { east: [], west: [] };
   let ready = false;
   (function(){
@@ -213,22 +188,37 @@ function makeSpriteLoader(base, frames){
     }
     for(let i=0;i<frames;i++){
       const pad = String(i).padStart(3,'0');
-      sprites.east.push(img('walk/east/frame_'+pad+'.png'));
-      sprites.west.push(img('walk/west/frame_'+pad+'.png'));
+      sprites.east.push(img(walkDir + '/east/frame_'+pad+'.png'));
+      sprites.west.push(img(walkDir + '/west/frame_'+pad+'.png'));
     }
     Promise.all(toLoad).then(()=>{ ready = true; });
   })();
   return { sprites, isReady(){ return ready; } };
 }
 
-const FOREST_SPRITE_LOADER    = makeSpriteLoader('assets/enemies/forest-sprite/', 6);
-const DESERT_SCORPION_LOADER  = makeSpriteLoader('assets/enemies/desert-scorpion/', 6);
-const MOUNTAIN_TROLL_LOADER   = makeSpriteLoader('assets/enemies/mountain-troll/', 6);
-const MOUNTAIN_DWARF_LOADER   = makeSpriteLoader('assets/enemies/mountain-dwarf/', 6);
-const FROST_ZOMBIE_LOADER     = makeSpriteLoader('assets/enemies/frost-zombie/', 6);
-const SNOW_YETI_LOADER        = makeSpriteLoader('assets/enemies/snow-yeti/', 6);
+const FOREST_SPRITE_LOADER       = makeSpriteLoader('assets/enemies/forest-sprite/', 6);
+const FOREST_GOBLIN_GREEN_LOADER = makeSpriteLoader('assets/enemies/forest-goblin-green/', 6);
+const DESERT_SCORPION_LOADER     = makeSpriteLoader('assets/enemies/desert-scorpion/', 6);
+const DESERT_MUMMY_LOADER        = makeSpriteLoader('assets/enemies/desert-mummy/', 6);
+const MOUNTAIN_TROLL_LOADER      = makeSpriteLoader('assets/enemies/mountain-troll/', 6);
+const MOUNTAIN_DWARF_LOADER      = makeSpriteLoader('assets/enemies/mountain-dwarf/', 6);
+const FROST_ZOMBIE_LOADER        = makeSpriteLoader('assets/enemies/frost-zombie/', 6);
+const SNOW_YETI_LOADER           = makeSpriteLoader('assets/enemies/snow-yeti/', 6);
 const DESOLATION_SKELETON_LOADER = makeSpriteLoader('assets/enemies/desolation-skeleton/', 6);
-const DESOLATION_WRAITH_LOADER   = makeSpriteLoader('assets/enemies/desolation-wraith/', 6);
+const DESOLATION_WRAITH_LOADER   = makeSpriteLoader('assets/enemies/desolation-wraith/', 6, 'animations/walking');
+
+const BIOME_DIRECTIONAL_ENEMIES = new Set([
+  'forest-sprite',
+  'forest-goblin-green',
+  'desert-scorpion',
+  'desert-mummy',
+  'mountain-troll',
+  'mountain-dwarf',
+  'snow-yeti',
+  'frost-zombie',
+  'desolation-skeleton',
+  'desolation-wraith',
+]);
 
 // ════════════════════════════════════════════════════════════════
 //  CANVAS
@@ -345,9 +335,10 @@ function generateLevel(lvl) {
   const segW = 380;        // largeur par segment (plus long)
   worldW = segW * (lvl.numEnemies + 4) + 300;
 
-  // ── Château — positionné EN PREMIER pour réserver sa zone ────
-  // Biome castle sprite: 128×160 at 2× = 256×320
-  const caW = 256, caH = 320;
+  // ── Château (tour centrale) — positionné EN PREMIER ──────────
+  // tower.png ratio ~ 0.667 (1024×1536)
+  const caH = 300;
+  const caW = Math.round(caH * (1024 / 1536));
   const caX = Math.floor(worldW * (0.33 + Math.random() * 0.34));
   castle = { x: caX, y: gY - caH, w: caW, h: caH };
   castleChestState = 'closed';
@@ -375,6 +366,10 @@ function generateLevel(lvl) {
   // Ennemis sur les plateformes (1 par plateforme)
   const enemyPlats  = floatPlats.slice(1, lvl.numEnemies+1); // skip first plat (start area)
   const enemyCount  = Math.min(lvl.numEnemies, enemyPlats.length);
+  const levelEnemyTypes =
+    (Array.isArray(lvl.enemyTypes) && lvl.enemyTypes.length)
+      ? lvl.enemyTypes
+      : [lvl.enemyType || 'goblin'];
   const levelVerbDatas = generateLevelVerbDatas(enemyCount);
   for(let i=0; i<enemyCount; i++){
     const p  = enemyPlats[i];
@@ -386,7 +381,7 @@ function generateLevel(lvl) {
       vx: pick([-45,45]),
       platX: p.x, platW: p.w,
       alive: true,
-      type:  lvl.enemyType,
+      type:  levelEnemyTypes[i % levelEnemyTypes.length],
       facing:1,
       walkT: 0,
       alert: false,
@@ -446,8 +441,10 @@ function generateLevel(lvl) {
     platforms.push({ x:topX, y:gY-ph2, w:topW, h:14, type:'platform' });
   }
 
-  // Portail de fin de niveau — biome gate sprite 80×112 at 2× = 160×224
-  flag = { x: worldW-220, y: gY-224, w:160, h:224 };
+  // Château final de niveau (verrouillé/déverrouillé)
+  const endW = 188;
+  const endH = 126;
+  flag = { x: worldW - 240, y: gY - endH + 4, w: endW, h: endH };
   castleRewardCoins = 0;
 
   // Player spawn
@@ -467,10 +464,10 @@ let SAVE = JSON.parse(localStorage.getItem('cqSave') || '{"totalStars":0,"skin":
 function saveSave(){ localStorage.setItem('cqSave', JSON.stringify(SAVE)); }
 
 const SKINS = [
-  { id:'knight', name:'Chevalier', emoji:'⚔️',  cost:0,   desc:'Armure classique',     img:'assets/brave_paladin/rotations/south.png' },
-  { id:'mage',   name:'Mage',      emoji:'🔮',  cost:30,  desc:'Robe et bâton magique', img:'assets/hero_mage/rotations/south.png' },
-  { id:'ninja',  name:'Ninja',     emoji:'🥷',  cost:60,  desc:'Tenue sombre & kunai',  img:'assets/hero_ninja/rotations/south.png' },
-  { id:'pirate', name:'Pirate',    emoji:'☠️',  cost:100, desc:'Tricorne & sabre',       img:'assets/hero_pirate/rotations/south.png' },
+  { id:'knight', name:'Chevalier', emoji:'⚔️',  cost:0,   desc:'Armure classique',     img:'assets/heroes/paladin/rotations/south.png' },
+  { id:'mage',   name:'Mage',      emoji:'🔮',  cost:30,  desc:'Robe et bâton magique', img:'assets/heroes/mage/rotations/south.png' },
+  { id:'ninja',  name:'Ninja',     emoji:'🥷',  cost:60,  desc:'Tenue sombre & kunai',  img:'assets/heroes/ninja/rotations/south.png' },
+  { id:'pirate', name:'Pirate',    emoji:'☠️',  cost:100, desc:'Tricorne & sabre',       img:'assets/heroes/pirate/rotations/south.png' },
 ];
 
 function recordError(q){
@@ -1087,7 +1084,7 @@ function render(){
   ctx.fillRect(0,0,W,H);
 
   // Décor arrière-plan (parallaxe)
-  if(advStyle==='advanced') drawBgAdv(c); else drawBg(c);
+  drawBgAdv(c);
 
   ctx.save();
   ctx.translate(-camX, 0);
@@ -1095,16 +1092,14 @@ function render(){
   // Colonnes décoratives
   for(const pl of pillars) drawPillar(pl, c);
 
-  // Sol continu (mode avancé : bande unique tilée)
-  if(advStyle==='advanced'){
-    drawGroundStripAdv(H - 55);
-  }
+  // Sol continu
+  drawGroundStripAdv(H - 55);
 
-  // Plateformes
+  // Plateformes flottantes
   for(const p of platforms){
-    // En mode avancé, le sol est dessiné en bande continue ci-dessus
-    if(p.type==='ground' && advStyle==='advanced') continue;
-    if(advStyle==='advanced') drawPlatformAdv(p, c); else drawPlatform(p, c);
+    // Le sol est dessiné par drawGroundStripAdv
+    if(p.type==='ground') continue;
+    drawPlatformAdv(p, c);
   }
 
   // Blocs ❓
@@ -1219,27 +1214,27 @@ function lighten(hex){
 }
 
 // ── Colonnes / piliers de décor ────────────────────────────────
-// pillar.png (1536×1024 RGBA) — contenu : x=583..1017 y=75..853 (435×779, ratio 0.56:1)
 function drawPillar(pl, lvl){
-  if(advStyle==='advanced' && pillarReady){
-    // Crop au contenu réel (sans le transparent autour)
-    const sx = 583, sy = 75, sw = 435, sh = 779;   // ratio 0.56:1
+  const pillarImg = getBiomeImg(getLevelBiome(), 'pillar');
+  if(pillarImg){
+    const ratio = pillarImg.width / pillarImg.height;
     const drawH = pl.h;
-    const drawW = drawH * (sw / sh);                // ≈ 0.56 × pl.h
-    const drawX = pl.x + pl.w/2 - drawW/2;
-    ctx.drawImage(pillarImg, sx, sy, sw, sh, drawX, pl.y, drawW, drawH);
-  } else {
-    // Fallback procédural
-    ctx.fillStyle = darken(lvl.ground);
-    ctx.fillRect(pl.x, pl.y, pl.w, pl.h);
-    ctx.fillStyle = 'rgba(0,0,0,.18)';
-    for(let gy=pl.y+12; gy<pl.y+pl.h-8; gy+=20) ctx.fillRect(pl.x+3, gy, pl.w-6, 8);
-    ctx.fillStyle = darken(darken(lvl.ground));
-    ctx.fillRect(pl.x-6, pl.y,        pl.w+12, 10);
-    ctx.fillRect(pl.x-4, pl.y+pl.h-8, pl.w+8,  8);
-    ctx.fillStyle = 'rgba(255,255,255,.06)';
-    ctx.fillRect(pl.x+2, pl.y+10, 4, pl.h-20);
+    const drawW = Math.max(24, Math.round(drawH * ratio));
+    const drawX = pl.x + pl.w / 2 - drawW / 2;
+    const drawY = pl.y;
+    ctx.drawImage(pillarImg, drawX, drawY, drawW, drawH);
+    return;
   }
+  // Fallback procédural
+  ctx.fillStyle = darken(lvl.ground);
+  ctx.fillRect(pl.x, pl.y, pl.w, pl.h);
+  ctx.fillStyle = 'rgba(0,0,0,.18)';
+  for(let gy=pl.y+12; gy<pl.y+pl.h-8; gy+=20) ctx.fillRect(pl.x+3, gy, pl.w-6, 8);
+  ctx.fillStyle = darken(darken(lvl.ground));
+  ctx.fillRect(pl.x-6, pl.y,        pl.w+12, 10);
+  ctx.fillRect(pl.x-4, pl.y+pl.h-8, pl.w+8,  8);
+  ctx.fillStyle = 'rgba(255,255,255,.06)';
+  ctx.fillRect(pl.x+2, pl.y+10, 4, pl.h-20);
 }
 
 // ── Blocs ❓ ──────────────────────────────────────────────────
@@ -1317,8 +1312,7 @@ function drawFlag(f){
   const killed  = enemies.filter(e=>!e.alive).length;
   const unlocked = totalEn === 0 || killed / totalEn >= 0.75;
 
-  const biome = (LEVELS[GS.level] || LEVELS[0]).biome || 'forest';
-  const gateImg = getGateImg(biome, !unlocked);
+  const gateImg = getGateImg(!unlocked);
   if(gateImg){
     ctx.drawImage(gateImg, f.x, f.y, f.w, f.h);
   } else {
@@ -1464,25 +1458,40 @@ function drawMummyAdv(bob){
 }
 
 // ── Biome enemies (PixelLab sprites) ──────────────────────────
-function drawBiomeEnemyAdv(loader, fallbackColor, bob){
+function drawBiomeEnemyAdv(loader, fallbackColor, bob, facing=1){
   if(!loader.isReady()){
     ctx.fillStyle = fallbackColor;
     ctx.fillRect(-24, -48+bob, 48, 48);
     return;
   }
   const frame = Math.floor(Date.now()/150) % 6;
+  const dir = facing >= 0 ? 'east' : 'west';
+  const frames = loader.sprites[dir];
+  const sideSprite = frames[frame];
+  const eastSprite = loader.sprites.east[frame];
+  const sprite =
+    (sideSprite && sideSprite.naturalWidth)
+      ? sideSprite
+      : eastSprite;
+  if(!sprite || !sprite.naturalWidth){
+    ctx.fillStyle = fallbackColor;
+    ctx.fillRect(-24, -48+bob, 48, 48);
+    return;
+  }
   // Sprite is 48×48px, drawn at 2× = 96×96, centred on bottom-centre of hitbox
   ctx.imageSmoothingEnabled = false;
-  ctx.drawImage(loader.sprites.east[frame], -48, -96+bob, 96, 96);
+  ctx.drawImage(sprite, -48, -96+bob, 96, 96);
 }
-function drawForestSpriteAdv(bob)       { drawBiomeEnemyAdv(FOREST_SPRITE_LOADER,    '#2d7a2d', bob); }
-function drawDesertScorpionAdv(bob)     { drawBiomeEnemyAdv(DESERT_SCORPION_LOADER,  '#c8a040', bob); }
-function drawMountainTrollAdv(bob)      { drawBiomeEnemyAdv(MOUNTAIN_TROLL_LOADER,   '#5a5a5a', bob); }
-function drawMountainDwarfAdv(bob)      { drawBiomeEnemyAdv(MOUNTAIN_DWARF_LOADER,   '#7a6040', bob); }
-function drawFrostZombieAdv(bob)        { drawBiomeEnemyAdv(FROST_ZOMBIE_LOADER,     '#a0c8e0', bob); }
-function drawSnowYetiAdv(bob)           { drawBiomeEnemyAdv(SNOW_YETI_LOADER,        '#d0e8ff', bob); }
-function drawDesolationSkeletonAdv(bob) { drawBiomeEnemyAdv(DESOLATION_SKELETON_LOADER, '#c0b080', bob); }
-function drawDesolationWraithAdv(bob)   { drawBiomeEnemyAdv(DESOLATION_WRAITH_LOADER,   '#4a2060', bob); }
+function drawForestSpriteAdv(bob, facing)        { drawBiomeEnemyAdv(FOREST_SPRITE_LOADER,       '#2d7a2d', bob, facing); }
+function drawForestGoblinGreenAdv(bob, facing)   { drawBiomeEnemyAdv(FOREST_GOBLIN_GREEN_LOADER, '#3f8c2f', bob, facing); }
+function drawDesertScorpionAdv(bob, facing)      { drawBiomeEnemyAdv(DESERT_SCORPION_LOADER,     '#c8a040', bob, facing); }
+function drawDesertMummyAdv(bob, facing)         { drawBiomeEnemyAdv(DESERT_MUMMY_LOADER,        '#d6c49a', bob, facing); }
+function drawMountainTrollAdv(bob, facing)       { drawBiomeEnemyAdv(MOUNTAIN_TROLL_LOADER,      '#5a5a5a', bob, facing); }
+function drawMountainDwarfAdv(bob, facing)       { drawBiomeEnemyAdv(MOUNTAIN_DWARF_LOADER,      '#7a6040', bob, facing); }
+function drawFrostZombieAdv(bob, facing)         { drawBiomeEnemyAdv(FROST_ZOMBIE_LOADER,        '#a0c8e0', bob, facing); }
+function drawSnowYetiAdv(bob, facing)            { drawBiomeEnemyAdv(SNOW_YETI_LOADER,           '#d0e8ff', bob, facing); }
+function drawDesolationSkeletonAdv(bob, facing)  { drawBiomeEnemyAdv(DESOLATION_SKELETON_LOADER, '#c0b080', bob, facing); }
+function drawDesolationWraithAdv(bob, facing)    { drawBiomeEnemyAdv(DESOLATION_WRAITH_LOADER,   '#4a2060', bob, facing); }
 
 // ── Mummy (simple — pixel art fallback) ───────────────────────
 function drawMummy(bob){
@@ -1535,81 +1544,64 @@ function drawBgAdv(c){
   }
 }
 
-// ── Sol continu (mode avancé) ─────────────────────────────────
-// ground platform.png (1536×1024 RGBA) — contenu : x=165..1373 y=310..627 (1209×318)
-// On crop le centre (sans les bords arrondis) pour un tiling continu
-// Tile a tileset PNG seamlessly: picks a 16×16 body tile and repeats it
-function drawTiledStrip(tilesetImg, x, y, w, tileRow){
-  // Always renders at pixel-perfect 2× scale: 16px tile → 32px on screen
-  const TILE = 16, DRAW = 32;
-  const sy = tileRow * TILE;
-  for(let tx = x; tx < x + w; tx += DRAW){
-    const clipW = Math.min(DRAW, x + w - tx);
-    ctx.drawImage(tilesetImg, 0, sy, clipW / 2, TILE, tx, y, clipW, DRAW);
+// ── Sol continu (sprite-based) ────────────────────────────────
+function drawRepeatedSprite(img, x, y, width, targetH){
+  if(!img || targetH <= 0 || width <= 0) return;
+  const tileW = Math.max(1, Math.round(targetH * (img.width / img.height)));
+  for(let tx = x; tx < x + width; tx += tileW){
+    const drawW = Math.min(tileW, x + width - tx);
+    const srcW = Math.max(1, Math.round(img.width * (drawW / tileW)));
+    ctx.drawImage(img, 0, 0, srcW, img.height, tx, y, drawW, targetH);
   }
 }
 
 function drawGroundStripAdv(gY){
-  const biome = (LEVELS[GS.level] || LEVELS[0]).biome || 'forest';
-  const groundImg = getBiomeImg(biome, 'ground');
-  if(groundImg){
-    // Surface tile row (row 0) sits just above the collision y — centred on gY
-    drawTiledStrip(groundImg, 0, gY - 16, worldW, 0);
-    // Body tiles (row 1) fill downward to canvas bottom
-    for(let ty = gY + 16; ty < H + 32; ty += 32){
-      drawTiledStrip(groundImg, 0, ty, worldW, 1);
+  const biome = getLevelBiome();
+  const topImg = getBiomeImg(biome, 'groundPlatform');
+  const bodyImg = getBiomeImg(biome, 'ground');
+
+  if(topImg && bodyImg){
+    const topH = 42;
+    const bodyH = 28;
+    drawRepeatedSprite(topImg, 0, gY - 24, worldW, topH);
+    for(let ty = gY + 14; ty < H + bodyH; ty += bodyH - 1){
+      drawRepeatedSprite(bodyImg, 0, ty, worldW, bodyH);
     }
     return;
   }
-  // Fallback: legacy sprite tiling
-  if(platGroundReady){
-    const sx = 300, sy = 310, sw = 940, sh = 318;
-    const displayH = 80;
-    const tileW = Math.round(displayH * (sw / sh));
-    for(let tx = 0; tx < worldW; tx += tileW){
-      ctx.drawImage(platGroundImg, sx, sy, sw, sh, tx, gY - 15, tileW, displayH);
-    }
-    return;
-  }
-  // Final fallback: procedural ground
+
+  // Fallback procédural
   const lvl2 = LEVELS[GS.level] || LEVELS[0];
   const c2 = getLvlColors(lvl2);
   ctx.fillStyle = c2.ground;
   ctx.fillRect(0, gY - 15, worldW, H - (gY - 15));
 }
 
-// ── Plateformes avancées (sprite-based) ──────────────────────
+// ── Plateformes flottantes (sprite-based) ─────────────────────
 function drawPlatformAdv(p, lvl){
-  if(p.type!=='ground'){
-    const biome3 = (LEVELS[GS.level] || LEVELS[0]).biome || 'forest';
-    const plat1Img = getBiomeImg(biome3, 'platform1');
-    if(plat1Img){
-      // Draw at 2× height (32px), top-aligned at p.y
-      drawTiledStrip(plat1Img, p.x, p.y, p.w, 0);
-      return;
-    }
-    if(platFloatReady){
-      const sx = 184, sy = 297, sw = 1178, sh = 382;
-      const drawW = p.w + 24;
-      const scale = drawW / sw;
-      const drawH = sh * scale;
-      const drawX = p.x - 12;
-      const drawY = p.y - drawH * 0.14;
-      ctx.drawImage(platFloatImg, sx, sy, sw, sh, drawX, drawY, drawW, drawH);
+  if(p.type !== 'ground'){
+    const floatingImg = getBiomeImg(getLevelBiome(), 'floating');
+    if(floatingImg){
+      const drawW = p.w + 22;
+      const drawH = Math.max(24, Math.round(drawW * (floatingImg.height / floatingImg.width)));
+      const drawX = p.x - 11;
+      const drawY = p.y - Math.round(drawH * 0.18);
+      ctx.drawImage(floatingImg, drawX, drawY, drawW, drawH);
       return;
     }
   }
+
   // Fallback procédural
-  if(p.type==='ground'){
-    ctx.fillStyle=lvl.ground;
-    ctx.fillRect(p.x,p.y,p.w,p.h);
-    ctx.fillStyle=lighten(lvl.ground);
-    ctx.fillRect(p.x,p.y,p.w,3);
+  if(p.type === 'ground'){
+    ctx.fillStyle = lvl.ground;
+    ctx.fillRect(p.x, p.y, p.w, p.h);
+    ctx.fillStyle = lighten(lvl.ground);
+    ctx.fillRect(p.x, p.y, p.w, 3);
   } else {
-    ctx.fillStyle='#a07850';
-    ctx.fillRect(p.x,p.y,p.w,p.h);
-    ctx.fillStyle='rgba(255,255,255,.15)';
-    ctx.fillRect(p.x,p.y,p.w,2);
+    ctx.fillStyle = '#a07850';
+    ctx.fillRect(p.x, p.y, p.w, p.h);
+    ctx.fillStyle = 'rgba(255,255,255,.15)';
+    ctx.fillRect(p.x, p.y, p.w, 2);
   }
 }
 
@@ -1804,7 +1796,9 @@ function drawSkinPirate(leg, arm){
 function drawEnemy(e){
   ctx.save();
   ctx.translate(e.x+e.w/2, e.y+e.h);
-  ctx.scale(e.facing,1);
+  if(!BIOME_DIRECTIONAL_ENEMIES.has(e.type)){
+    ctx.scale(e.facing,1);
+  }
   const bob = Math.sin(Date.now()*.004+e.x*.01)*2;
 
   if(advStyle==='advanced'){
@@ -1812,27 +1806,31 @@ function drawEnemy(e){
     else if(e.type==='skeleton')           drawSkeletonAdv(bob);
     else if(e.type==='dragon')             drawDragonAdv(bob);
     else if(e.type==='mummy')              drawMummyAdv(bob);
-    else if(e.type==='forest-sprite')      drawForestSpriteAdv(bob);
-    else if(e.type==='desert-scorpion')    drawDesertScorpionAdv(bob);
-    else if(e.type==='mountain-troll')     drawMountainTrollAdv(bob);
-    else if(e.type==='mountain-dwarf')     drawMountainDwarfAdv(bob);
-    else if(e.type==='frost-zombie')       drawFrostZombieAdv(bob);
-    else if(e.type==='snow-yeti')          drawSnowYetiAdv(bob);
-    else if(e.type==='desolation-skeleton') drawDesolationSkeletonAdv(bob);
-    else if(e.type==='desolation-wraith')  drawDesolationWraithAdv(bob);
+    else if(e.type==='forest-sprite')       drawForestSpriteAdv(bob, e.facing);
+    else if(e.type==='forest-goblin-green') drawForestGoblinGreenAdv(bob, e.facing);
+    else if(e.type==='desert-scorpion')     drawDesertScorpionAdv(bob, e.facing);
+    else if(e.type==='desert-mummy')        drawDesertMummyAdv(bob, e.facing);
+    else if(e.type==='mountain-troll')      drawMountainTrollAdv(bob, e.facing);
+    else if(e.type==='mountain-dwarf')      drawMountainDwarfAdv(bob, e.facing);
+    else if(e.type==='frost-zombie')        drawFrostZombieAdv(bob, e.facing);
+    else if(e.type==='snow-yeti')           drawSnowYetiAdv(bob, e.facing);
+    else if(e.type==='desolation-skeleton') drawDesolationSkeletonAdv(bob, e.facing);
+    else if(e.type==='desolation-wraith')   drawDesolationWraithAdv(bob, e.facing);
   } else {
     if(e.type==='goblin')        drawGoblin(bob);
     else if(e.type==='skeleton') drawSkeleton(bob);
     else if(e.type==='dragon')   drawDragon(bob);
     else if(e.type==='mummy')    drawMummy(bob);
-    else if(e.type==='forest-sprite')      drawForestSpriteAdv(bob);
-    else if(e.type==='desert-scorpion')    drawDesertScorpionAdv(bob);
-    else if(e.type==='mountain-troll')     drawMountainTrollAdv(bob);
-    else if(e.type==='mountain-dwarf')     drawMountainDwarfAdv(bob);
-    else if(e.type==='frost-zombie')       drawFrostZombieAdv(bob);
-    else if(e.type==='snow-yeti')          drawSnowYetiAdv(bob);
-    else if(e.type==='desolation-skeleton') drawDesolationSkeletonAdv(bob);
-    else if(e.type==='desolation-wraith')  drawDesolationWraithAdv(bob);
+    else if(e.type==='forest-sprite')       drawForestSpriteAdv(bob, e.facing);
+    else if(e.type==='forest-goblin-green') drawForestGoblinGreenAdv(bob, e.facing);
+    else if(e.type==='desert-scorpion')     drawDesertScorpionAdv(bob, e.facing);
+    else if(e.type==='desert-mummy')        drawDesertMummyAdv(bob, e.facing);
+    else if(e.type==='mountain-troll')      drawMountainTrollAdv(bob, e.facing);
+    else if(e.type==='mountain-dwarf')      drawMountainDwarfAdv(bob, e.facing);
+    else if(e.type==='frost-zombie')        drawFrostZombieAdv(bob, e.facing);
+    else if(e.type==='snow-yeti')           drawSnowYetiAdv(bob, e.facing);
+    else if(e.type==='desolation-skeleton') drawDesolationSkeletonAdv(bob, e.facing);
+    else if(e.type==='desolation-wraith')   drawDesolationWraithAdv(bob, e.facing);
   }
 
   ctx.restore();
@@ -2014,7 +2012,7 @@ function drawDragon(bob){
   ctx.restore();
 }
 
-function enemyEmoji(type){ return {goblin:'👺',skeleton:'💀',dragon:'🐉',mummy:'🏺','forest-sprite':'🧚','desert-scorpion':'🦂','mountain-troll':'🗿','mountain-dwarf':'⛏️','frost-zombie':'🧟','snow-yeti':'❄️','desolation-skeleton':'💀','desolation-wraith':'👻'}[type]||'👾'; }
+function enemyEmoji(type){ return {goblin:'👺',skeleton:'💀',dragon:'🐉',mummy:'🏺','forest-sprite':'🧚','forest-goblin-green':'👺','desert-scorpion':'🦂','desert-mummy':'🏺','mountain-troll':'🗿','mountain-dwarf':'⛏️','frost-zombie':'🧟','snow-yeti':'❄️','desolation-skeleton':'💀','desolation-wraith':'👻'}[type]||'👾'; }
 
 // ── HUD ───────────────────────────────────────────────────────
 function drawHUD(){
@@ -2434,54 +2432,72 @@ function drawChest(){
 // ── Dessin intérieur château ─────────────────────────────────
 
 function drawCastleRoom(){
-  // Fond pierre
-  ctx.fillStyle='#0f0f1e'; ctx.fillRect(0,0,W,H);
-  const bW=56,bH=28;
-  for(let row=-1;row<=Math.ceil(H/bH);row++){
-    for(let col=-1;col<=Math.ceil(W/bW);col++){
-      const sx=col*bW+(row%2===0?0:bW/2), sy=row*bH;
-      const shade=(row+col)%3===0?'#2e2e42':(row+col)%3===1?'#282838':'#252535';
-      ctx.fillStyle=shade; ctx.fillRect(sx+1,sy+1,bW-2,bH-2);
-      ctx.fillStyle='rgba(255,255,255,.032)'; ctx.fillRect(sx+1,sy+1,bW-2,2);
-      ctx.fillStyle='rgba(0,0,0,.24)'; ctx.fillRect(sx+1,sy+bH-3,bW-2,2);
+  const towerInside = readyImage(commonLevelImages.towerInside);
+  if(towerInside){
+    ctx.drawImage(towerInside, 0, 0, W, H);
+    // Slight bottom darkening for better gameplay readability.
+    ctx.fillStyle = 'rgba(0,0,0,.18)';
+    ctx.fillRect(0, H - 180, W, 180);
+  } else {
+    // Fallback procedural room
+    ctx.fillStyle='#0f0f1e'; ctx.fillRect(0,0,W,H);
+    const bW=56,bH=28;
+    for(let row=-1;row<=Math.ceil(H/bH);row++){
+      for(let col=-1;col<=Math.ceil(W/bW);col++){
+        const sx=col*bW+(row%2===0?0:bW/2), sy=row*bH;
+        const shade=(row+col)%3===0?'#2e2e42':(row+col)%3===1?'#282838':'#252535';
+        ctx.fillStyle=shade; ctx.fillRect(sx+1,sy+1,bW-2,bH-2);
+        ctx.fillStyle='rgba(255,255,255,.032)'; ctx.fillRect(sx+1,sy+1,bW-2,2);
+        ctx.fillStyle='rgba(0,0,0,.24)'; ctx.fillRect(sx+1,sy+bH-3,bW-2,2);
+      }
     }
   }
-  // Sol parqueté
-  const flY=H-55;
-  ctx.fillStyle='#3a2810'; ctx.fillRect(0,flY,W,55);
-  ctx.fillStyle='#2a1c08'; ctx.fillRect(0,flY,W,5);
-  for(let tx=0;tx<W;tx+=48){
-    ctx.fillStyle=tx%96===0?'#4a3418':'#3e2c12';
-    ctx.fillRect(tx+1,flY+5,47,50);
-    ctx.fillStyle='rgba(255,255,255,.04)'; ctx.fillRect(tx+1,flY+5,47,2);
+  const flY = H - 55;
+  if(!towerInside){
+    // Sol parqueté
+    ctx.fillStyle='#3a2810'; ctx.fillRect(0,flY,W,55);
+    ctx.fillStyle='#2a1c08'; ctx.fillRect(0,flY,W,5);
+    for(let tx=0;tx<W;tx+=48){
+      ctx.fillStyle=tx%96===0?'#4a3418':'#3e2c12';
+      ctx.fillRect(tx+1,flY+5,47,50);
+      ctx.fillStyle='rgba(255,255,255,.04)'; ctx.fillRect(tx+1,flY+5,47,2);
+    }
+    // Torches
+    for(const tx of [70,W-70]){
+      const ty=flY-92;
+      ctx.fillStyle='#6a6a6a'; ctx.fillRect(tx-3,ty,6,32); ctx.fillRect(tx-9,ty-4,18,8);
+      const ft=Date.now()*.006;
+      ctx.fillStyle='rgba(255,100,0,.9)';
+      ctx.beginPath(); ctx.moveTo(tx,ty-30+Math.sin(ft)*4);
+      ctx.lineTo(tx-12,ty+Math.sin(ft+1)*3); ctx.lineTo(tx+12,ty+Math.sin(ft+2)*3); ctx.closePath(); ctx.fill();
+      ctx.fillStyle='rgba(255,220,50,.85)';
+      ctx.beginPath(); ctx.moveTo(tx,ty-18+Math.sin(ft+.5)*3);
+      ctx.lineTo(tx-6,ty+Math.sin(ft+1.5)*2); ctx.lineTo(tx+6,ty+Math.sin(ft+2.5)*2); ctx.closePath(); ctx.fill();
+      ctx.save(); ctx.globalAlpha=0.12+Math.sin(ft)*.04;
+      const rg=ctx.createRadialGradient(tx,ty-5,0,tx,ty-5,55);
+      rg.addColorStop(0,'#ff9900'); rg.addColorStop(1,'transparent');
+      ctx.fillStyle=rg; ctx.fillRect(tx-55,ty-60,110,90);
+      ctx.globalAlpha=1; ctx.restore();
+    }
+    // Porte de sortie (gauche)
+    const dW=48,dH=130;
+    ctx.fillStyle='#050510'; ctx.fillRect(0,flY-dH,dW,dH);
+    ctx.fillStyle='#7a5028';
+    ctx.fillRect(0,flY-dH,4,dH); ctx.fillRect(dW-4,flY-dH,4,dH); ctx.fillRect(0,flY-dH-4,dW,8);
+    ctx.fillStyle='#050510'; ctx.beginPath(); ctx.arc(dW/2,flY-dH,dW/2,Math.PI,0); ctx.fill();
+    ctx.strokeStyle='#7a5028'; ctx.lineWidth=6;
+    ctx.beginPath(); ctx.arc(dW/2,flY-dH,dW/2+3,Math.PI,0); ctx.stroke();
+    ctx.fillStyle='#ffd700'; ctx.font='bold 11px Courier New'; ctx.textAlign='center';
+    ctx.fillText('◀ SORTIR', dW/2, flY-dH-12);
+  } else {
+    // Exit prompt when using tower-inside background art.
+    ctx.fillStyle='rgba(0,0,0,.55)';
+    ctx.fillRect(6, flY-40, 76, 24);
+    ctx.fillStyle='#ffd700';
+    ctx.font='bold 12px Courier New';
+    ctx.textAlign='left';
+    ctx.fillText('◀ SORTIR', 12, flY-24);
   }
-  // Torches
-  for(const tx of [70,W-70]){
-    const ty=flY-92;
-    ctx.fillStyle='#6a6a6a'; ctx.fillRect(tx-3,ty,6,32); ctx.fillRect(tx-9,ty-4,18,8);
-    const ft=Date.now()*.006;
-    ctx.fillStyle='rgba(255,100,0,.9)';
-    ctx.beginPath(); ctx.moveTo(tx,ty-30+Math.sin(ft)*4);
-    ctx.lineTo(tx-12,ty+Math.sin(ft+1)*3); ctx.lineTo(tx+12,ty+Math.sin(ft+2)*3); ctx.closePath(); ctx.fill();
-    ctx.fillStyle='rgba(255,220,50,.85)';
-    ctx.beginPath(); ctx.moveTo(tx,ty-18+Math.sin(ft+.5)*3);
-    ctx.lineTo(tx-6,ty+Math.sin(ft+1.5)*2); ctx.lineTo(tx+6,ty+Math.sin(ft+2.5)*2); ctx.closePath(); ctx.fill();
-    ctx.save(); ctx.globalAlpha=0.12+Math.sin(ft)*.04;
-    const rg=ctx.createRadialGradient(tx,ty-5,0,tx,ty-5,55);
-    rg.addColorStop(0,'#ff9900'); rg.addColorStop(1,'transparent');
-    ctx.fillStyle=rg; ctx.fillRect(tx-55,ty-60,110,90);
-    ctx.globalAlpha=1; ctx.restore();
-  }
-  // Porte de sortie (gauche)
-  const dW=48,dH=130;
-  ctx.fillStyle='#050510'; ctx.fillRect(0,flY-dH,dW,dH);
-  ctx.fillStyle='#7a5028';
-  ctx.fillRect(0,flY-dH,4,dH); ctx.fillRect(dW-4,flY-dH,4,dH); ctx.fillRect(0,flY-dH-4,dW,8);
-  ctx.fillStyle='#050510'; ctx.beginPath(); ctx.arc(dW/2,flY-dH,dW/2,Math.PI,0); ctx.fill();
-  ctx.strokeStyle='#7a5028'; ctx.lineWidth=6;
-  ctx.beginPath(); ctx.arc(dW/2,flY-dH,dW/2+3,Math.PI,0); ctx.stroke();
-  ctx.fillStyle='#ffd700'; ctx.font='bold 11px Courier New'; ctx.textAlign='center';
-  ctx.fillText('◀ SORTIR', dW/2, flY-dH-12);
 
   // Coffre
   drawChest();
@@ -2573,156 +2589,19 @@ const CASTLE_STYLES = [
 
 function drawCastleSprite(ca, c){
   const sxScreen = ca.x - camX;
-  if(sxScreen > W+240 || sxScreen + ca.w < -240) return;
+  if(sxScreen > W + 240 || sxScreen + ca.w < -240) return;
 
-  const sx = ca.x;
-  const cx2 = sx + ca.w/2;
-  const gY2 = ca.y + ca.h;
-
-  const lvlDef = LEVELS[GS.level] || LEVELS[0];
-  const isPyramid = lvlDef.castleSprite === 'pyramid';
-
-  if(isPyramid){
-    drawPyramidCastle(ca, cx2, gY2);
-    drawCastlePrompt(cx2, ca);
-    return;
+  const towerImg = readyImage(commonLevelImages.tower);
+  if(towerImg){
+    ctx.drawImage(towerImg, ca.x, ca.y, ca.w, ca.h);
+  } else {
+    const st = CASTLE_STYLES[Math.min(GS.level, CASTLE_STYLES.length - 1)];
+    ctx.fillStyle = st.body;
+    ctx.fillRect(ca.x, ca.y, ca.w, ca.h);
+    ctx.fillStyle = st.dark;
+    ctx.fillRect(ca.x + ca.w * 0.35, ca.y + ca.h * 0.65, ca.w * 0.3, ca.h * 0.35);
   }
-
-  const biome2 = (LEVELS[GS.level] || LEVELS[0]).biome || 'forest';
-  const biomeCastleImg = getBiomeImg(biome2, 'castle');
-  if(biomeCastleImg){
-    ctx.drawImage(biomeCastleImg, sx, ca.y, ca.w, ca.h);
-    drawCastlePrompt(cx2, ca);
-    return;
-  }
-  if(castleImgReady){
-    ctx.drawImage(castleImg, sx, ca.y, ca.w, ca.h);
-    drawCastlePrompt(cx2, ca);
-    return;
-  }
-
-  // Fallback procedural drawing if image not yet loaded
-  const st = CASTLE_STYLES[Math.min(GS.level, CASTLE_STYLES.length-1)];
-  const dW=52, dH=90;              // porte
-  const dX = cx2-dW/2;
-  const dTop = gY2-dH;
-  const archR = dW/2;
-  const brickH=18, brickW=22;
-
-  function drawBricks(x,y,w,h){
-    ctx.fillStyle='rgba(0,0,0,.15)';
-    for(let r=0;r<Math.ceil(h/brickH);r++){
-      for(let bc=0;bc<Math.ceil(w/brickW)+1;bc++){
-        const bx=x+bc*brickW+(r%2?brickW/2:0);
-        const by=y+r*brickH;
-        if(bx+brickW<=x||bx>=x+w||by+brickH<=y||by>=y+h) continue;
-        const clX=Math.max(bx,x), clW=Math.min(bx+brickW,x+w)-clX;
-        const clY=Math.max(by,y), clH=Math.min(by+brickH,y+h)-clY;
-        ctx.fillRect(clX+1,clY+1,clW-2,clH-2);
-      }
-    }
-    ctx.fillStyle='rgba(255,255,255,.05)';
-    ctx.fillRect(x,y,w,2);
-  }
-
-  // ── Tours latérales (dessinées en premier pour être derrière le corps) ──
-  const tW=32, tH=ca.h+28;
-  for(const tX of [sx-tW+8, sx+ca.w-8]){
-    ctx.fillStyle=st.dark; ctx.fillRect(tX,ca.y-26,tW,tH);
-    drawBricks(tX,ca.y-26,tW,tH);
-    // Merlons tour
-    for(let i=0;i<3;i++){
-      ctx.fillStyle=st.dark;
-      ctx.fillRect(tX+2+i*(tW/3),ca.y-40,9,16);
-    }
-    // Fenêtre tour en ogive
-    const wX=tX+tW/2-5, wY=ca.y+28;
-    ctx.fillStyle='#030308'; ctx.fillRect(wX,wY,10,14);
-    ctx.beginPath(); ctx.arc(wX+5,wY,5,Math.PI,0); ctx.fill();
-    // Lueur
-    ctx.save(); ctx.globalAlpha=0.45+Math.sin(Date.now()*.006)*.15;
-    ctx.fillStyle=st.winCol;
-    ctx.fillRect(wX+1,wY+1,8,10);
-    ctx.beginPath(); ctx.arc(wX+5,wY,4,Math.PI,0); ctx.fill();
-    ctx.globalAlpha=1; ctx.restore();
-  }
-
-  // ── Corps du château (plein — le joueur est dessiné par-dessus) ──
-  ctx.fillStyle=st.body; ctx.fillRect(sx,ca.y,ca.w,ca.h);
-  drawBricks(sx,ca.y,ca.w,ca.h);
-
-  // ── Porte (ouverture sombre dans le mur) ─────────────────────
-  // Fond sombre
-  ctx.fillStyle='#05050a';
-  ctx.fillRect(dX, dTop, dW, dH);
-  // Arc du haut
-  ctx.beginPath();
-  ctx.arc(cx2, dTop, archR, Math.PI, 0);
-  ctx.fill();
-  // Cadre de porte en bois
-  ctx.strokeStyle=st.accent; ctx.lineWidth=4;
-  ctx.beginPath();
-  ctx.moveTo(dX-2, gY2); ctx.lineTo(dX-2, dTop);
-  ctx.arc(cx2, dTop, archR+2, Math.PI, 0, false);
-  ctx.lineTo(dX+dW+2, gY2);
-  ctx.stroke();
-  // Clef de voûte
-  ctx.fillStyle=st.accent; ctx.fillRect(cx2-5, dTop-archR-6, 10, 10);
-  // Lueur intérieure (profondeur)
-  ctx.save(); ctx.globalAlpha=0.18+Math.sin(Date.now()*.004)*.06;
-  ctx.fillStyle=st.winCol;
-  ctx.fillRect(dX+4, dTop+4, dW-8, dH-4);
-  ctx.beginPath(); ctx.arc(cx2, dTop, archR-4, Math.PI, 0); ctx.fill();
-  ctx.globalAlpha=1; ctx.restore();
-
-  // ── Merlons corps principal ───────────────────────────────────
-  const mCount=Math.floor(ca.w/24);
-  for(let i=0;i<mCount;i++){
-    const mx=sx+3+i*(ca.w/mCount);
-    if(mx+14>dX-2&&mx<dX+dW+2) continue;
-    ctx.fillStyle=st.body; ctx.fillRect(mx,ca.y-14,14,18);
-    ctx.fillStyle='rgba(0,0,0,.2)'; ctx.fillRect(mx+1,ca.y-14,12,3);
-  }
-
-  // ── Fenêtres principales ──────────────────────────────────────
-  ctx.fillStyle='#030308';
-  const wins=[[sx+20,ca.y+38],[sx+ca.w-32,ca.y+38]];
-  for(const [wx,wy] of wins){
-    ctx.fillRect(wx,wy,12,18); ctx.beginPath(); ctx.arc(wx+6,wy,6,Math.PI,0); ctx.fill();
-  }
-  ctx.save(); ctx.globalAlpha=0.4+Math.sin(Date.now()*.005)*.12; ctx.fillStyle=st.winCol;
-  for(const [wx,wy] of wins){
-    ctx.fillRect(wx+1,wy+1,10,14); ctx.beginPath(); ctx.arc(wx+6,wy,5,Math.PI,0); ctx.fill();
-  }
-  ctx.globalAlpha=1; ctx.restore();
-
-  // ── Marches d'entrée ─────────────────────────────────────────
-  for(let i=0;i<3;i++){
-    ctx.fillStyle=i%2===0?st.accent:st.dark;
-    ctx.fillRect(dX-5+i*4, gY2+i*4, dW+10-i*8, 5);
-  }
-
-  // ── Bannière (petite, distincte du drapeau de fin de niveau) ──
-  const flagX=sx+ca.w-12;
-  const flagY=ca.y-10;
-  ctx.fillStyle='#aaa'; ctx.fillRect(flagX,flagY-20,2,22);
-  const fw=Math.sin(Date.now()*.004)*2;
-  ctx.fillStyle=st.flag;
-  ctx.beginPath();
-  ctx.moveTo(flagX+2,flagY-20); ctx.lineTo(flagX+16,flagY-13+fw);
-  ctx.lineTo(flagX+14,flagY-6+fw*.6); ctx.lineTo(flagX+2,flagY-6); ctx.fill();
-
-  // ── Indication d'entrée ──────────────────────────────────────
-  if(!QS.active&&GS.screen==='game'){
-    const px=player.x+player.w/2;
-    if(Math.abs(px-(ca.x+ca.w/2))<95&&player.onGround){
-      ctx.save();
-      ctx.font='bold 13px Courier New'; ctx.textAlign='center';
-      ctx.fillStyle='rgba(0,0,0,.75)'; ctx.fillRect(cx2-108,ca.y-36,216,22);
-      ctx.fillStyle='#ffd700'; ctx.fillText('⬆ Entrer dans le château',cx2,ca.y-20);
-      ctx.restore();
-    }
-  }
+  drawCastlePrompt(ca.x + ca.w / 2, ca);
 }
 
 function drawCastlePrompt(cx2, ca){
@@ -2735,56 +2614,6 @@ function drawCastlePrompt(cx2, ca){
       ctx.fillStyle='#ffd700'; ctx.fillText('⬆ Entrer dans le château', cx2, ca.y-20);
       ctx.restore();
     }
-  }
-}
-
-function drawPyramidCastle(ca, cx2, gY2){
-  if(desertPyramidReady){
-    // Draw tiled pyramid stone walls
-    const tileSize = 16, scale = 3;
-    const drawTile = Math.round(tileSize * scale);
-    // Body
-    for(let tx = ca.x; tx < ca.x + ca.w; tx += drawTile){
-      for(let ty = ca.y; ty < gY2; ty += drawTile){
-        const clipW = Math.min(drawTile, ca.x + ca.w - tx);
-        const clipH = Math.min(drawTile, gY2 - ty);
-        ctx.drawImage(desertPyramidImg, 0, tileSize, tileSize * (clipW/drawTile), tileSize * (clipH/drawTile), tx, ty, clipW, clipH);
-      }
-    }
-    // Surface row
-    for(let tx = ca.x; tx < ca.x + ca.w; tx += drawTile){
-      const clipW = Math.min(drawTile, ca.x + ca.w - tx);
-      ctx.drawImage(desertPyramidImg, 0, 0, tileSize * (clipW/drawTile), tileSize, tx, ca.y, clipW, drawTile);
-    }
-  } else {
-    // Fallback — draw procedural pyramid
-    const sandy = '#c8a040', dark = '#a07820', door = '#1a0e04';
-    // Pyramid shape (trapezoid)
-    ctx.fillStyle = sandy;
-    ctx.beginPath();
-    ctx.moveTo(cx2 - ca.w*0.6, gY2);
-    ctx.lineTo(cx2 + ca.w*0.6, gY2);
-    ctx.lineTo(cx2 + ca.w*0.15, ca.y);
-    ctx.lineTo(cx2 - ca.w*0.15, ca.y);
-    ctx.fill();
-    // Stone lines
-    ctx.strokeStyle = dark; ctx.lineWidth = 1;
-    for(let row = 1; row < 7; row++){
-      const t = row / 7;
-      const rowY = ca.y + (gY2 - ca.y) * t;
-      const halfW = (ca.w * 0.15 + (ca.w * 0.45) * t);
-      ctx.beginPath(); ctx.moveTo(cx2 - halfW, rowY); ctx.lineTo(cx2 + halfW, rowY); ctx.stroke();
-    }
-    // Door
-    const dW = 38, dH = 60;
-    ctx.fillStyle = door;
-    ctx.fillRect(cx2 - dW/2, gY2 - dH, dW, dH);
-    ctx.beginPath(); ctx.arc(cx2, gY2 - dH, dW/2, Math.PI, 0); ctx.fill();
-  }
-  // Entrance steps
-  for(let i = 0; i < 3; i++){
-    ctx.fillStyle = i%2===0 ? '#d4b050' : '#a07820';
-    ctx.fillRect(cx2 - 22 + i*4, gY2 + i*4, 44 - i*8, 5);
   }
 }
 

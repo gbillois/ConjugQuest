@@ -52,15 +52,9 @@ ConjugQuest/
 │   ├── sprites.js      # Pixel-art sprite data (fallback)
 │   └── game.js         # Game loop, physics, rendering
 └── assets/
-    ├── brave_paladin/  # Knight sprite sheets (PixelLab)
-    ├── hero_mage/      # Mage sprite sheets (PixelLab)
-    ├── hero_ninja/     # Ninja sprite sheets (PixelLab)
-    ├── hero_pirate/    # Pirate sprite sheets (PixelLab)
-    ├── goblin/         # Goblin walk animation (PixelLab)
-    ├── castle.png      # Castle entrance sprite
-    ├── ground platform.png
-    ├── floating platform.png
-    └── pillar.png
+    ├── heroes/         # Hero sprite sheets (paladin, mage, ninja, pirate)
+    ├── enemies/        # Enemy sprite sheets
+    └── levels/         # Per-biome backgrounds + platforms + pillars + tower/gates
 ```
 
 ## Running Locally
