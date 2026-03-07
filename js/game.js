@@ -285,11 +285,15 @@ let jumpRequest = false;
 
 // Clavier
 document.addEventListener('keydown', e => {
+  if(QS.active){
+    if(handleQuestionKeyboard(e)) return;
+  }
   if(e.code==='ArrowLeft'  || e.code==='KeyA') keys.left  = true;
   if(e.code==='ArrowRight' || e.code==='KeyD') keys.right = true;
   if((e.code==='ArrowUp' || e.code==='Space' || e.code==='KeyW') && !e.repeat) jumpRequest = true;
 });
 document.addEventListener('keyup', e => {
+  if(QS.active) return;
   if(e.code==='ArrowLeft'  || e.code==='KeyA') keys.left  = false;
   if(e.code==='ArrowRight' || e.code==='KeyD') keys.right = false;
 });
@@ -336,9 +340,10 @@ function generateLevel(lvl) {
   worldW = segW * (lvl.numEnemies + 4) + 300;
 
   // ── Château (tour centrale) — positionné EN PREMIER ──────────
-  // tower.png ratio ~ 0.667 (1024×1536)
   const caH = 300;
-  const caW = Math.round(caH * (1024 / 1536));
+  const towerImgReady = readyImage(commonLevelImages.tower);
+  const towerRatio = towerImgReady ? (towerImgReady.width / towerImgReady.height) : 0.51;
+  const caW = Math.round(caH * towerRatio);
   const caX = Math.floor(worldW * (0.33 + Math.random() * 0.34));
   castle = { x: caX, y: gY - caH, w: caW, h: caH };
   castleChestState = 'closed';
@@ -442,8 +447,10 @@ function generateLevel(lvl) {
   }
 
   // Château final de niveau (verrouillé/déverrouillé)
-  const endW = 188;
-  const endH = 126;
+  const lockedGate = readyImage(commonLevelImages.castleLocked);
+  const gateRatio = lockedGate ? (lockedGate.width / lockedGate.height) : 1.6;
+  const endH = 122;
+  const endW = Math.round(endH * gateRatio);
   flag = { x: worldW - 240, y: gY - endH + 4, w: endW, h: endH };
   castleRewardCoins = 0;
 
@@ -653,8 +660,90 @@ const QS = {
   q:      null,
 };
 
+const QK = { selectedBtn: null };
+
+function clearMoveKeys(){
+  keys.left = false;
+  keys.right = false;
+  jumpRequest = false;
+}
+
+function getQuestionButtons(){
+  return Array.from(document.querySelectorAll('#qAnswers .qBtn'));
+}
+
+function getEnabledQuestionButtons(){
+  return getQuestionButtons().filter(b => !b.disabled);
+}
+
+function syncQuestionKeyboardSelection(){
+  const enabled = getEnabledQuestionButtons();
+  if(!enabled.length){
+    QK.selectedBtn = null;
+  } else if(!QK.selectedBtn || !enabled.includes(QK.selectedBtn)){
+    QK.selectedBtn = enabled[0];
+  }
+  getQuestionButtons().forEach(b => b.classList.toggle('kbSel', b === QK.selectedBtn));
+}
+
+function moveQuestionSelection(delta){
+  const enabled = getEnabledQuestionButtons();
+  if(!enabled.length) return;
+  if(!QK.selectedBtn || !enabled.includes(QK.selectedBtn)){
+    QK.selectedBtn = enabled[0];
+    syncQuestionKeyboardSelection();
+    return;
+  }
+  let idx = enabled.indexOf(QK.selectedBtn);
+  idx = (idx + delta + enabled.length) % enabled.length;
+  QK.selectedBtn = enabled[idx];
+  syncQuestionKeyboardSelection();
+}
+
+function selectQuestionByIndex(index){
+  const enabled = getEnabledQuestionButtons();
+  if(index < 0 || index >= enabled.length) return;
+  QK.selectedBtn = enabled[index];
+  syncQuestionKeyboardSelection();
+  QK.selectedBtn.click();
+}
+
+function validateQuestionSelection(){
+  const enabled = getEnabledQuestionButtons();
+  if(!enabled.length) return;
+  if(!QK.selectedBtn || !enabled.includes(QK.selectedBtn)) QK.selectedBtn = enabled[0];
+  QK.selectedBtn.click();
+}
+
+function handleQuestionKeyboard(e){
+  if(!QS.active) return false;
+  const c = e.code;
+  if(c==='ArrowLeft' || c==='ArrowUp' || c==='KeyA' || c==='KeyW'){
+    e.preventDefault();
+    moveQuestionSelection(-1);
+    return true;
+  }
+  if(c==='ArrowRight' || c==='ArrowDown' || c==='KeyD' || c==='KeyS'){
+    e.preventDefault();
+    moveQuestionSelection(1);
+    return true;
+  }
+  if(c==='Enter' || c==='Space'){
+    e.preventDefault();
+    validateQuestionSelection();
+    return true;
+  }
+  if(c==='Digit1' || c==='Digit2' || c==='Digit3' || c==='Digit4'){
+    e.preventDefault();
+    selectQuestionByIndex(Number(c.slice(-1)) - 1);
+    return true;
+  }
+  return true;
+}
+
 function openQuestion(enemy){
   if(QS.active) return;
+  clearMoveKeys();
   QS.active    = true;
   QS.enemy     = enemy;
   enemy.battling = true;
@@ -686,6 +775,8 @@ function buildQuestion(enemy){
     btn.addEventListener('touchend', e => { e.preventDefault(); handler(); }, {passive:false});
     container.appendChild(btn);
   });
+  QK.selectedBtn = null;
+  syncQuestionKeyboardSelection();
 
   renderBattleHP();
 }
@@ -798,6 +889,8 @@ function answerClick(answer){
   if(!QS.active) return;
   const btns = document.querySelectorAll('.qBtn');
   btns.forEach(b => b.disabled = true);
+  QK.selectedBtn = null;
+  syncQuestionKeyboardSelection();
   btns.forEach(b => {
     if(b.textContent === QS.q.correct) b.classList.add('ok');
     if(b.textContent === answer && answer!==QS.q.correct) b.classList.add('bad');
@@ -825,6 +918,8 @@ function answerClick(answer){
 
 function closeQuestion(){
   QS.active = false;
+  QK.selectedBtn = null;
+  syncQuestionKeyboardSelection();
   document.getElementById('qModal').classList.remove('show');
   if(CQ.active){ CQ.active=false; GS.screen='castle'; }
   else GS.screen='game';
@@ -1061,7 +1156,7 @@ function rectsTouch(a,b){ return a.x<b.x+b.w&&a.x+a.w>b.x&&a.y<b.y+b.h&&a.y+a.h>
 //  STYLE AVANCÉ — PIXEL ART PAR TABLEAU DE PIXELS
 // ════════════════════════════════════════════════════════════════
 
-let advStyle = localStorage.getItem('cqSprStyle') || 'simple';
+let advStyle = 'simple';
 function setSprStyle(s){
   advStyle = s;
   localStorage.setItem('cqSprStyle', s);
@@ -1215,7 +1310,7 @@ function lighten(hex){
 
 // ── Colonnes / piliers de décor ────────────────────────────────
 function drawPillar(pl, lvl){
-  const pillarImg = getBiomeImg(getLevelBiome(), 'pillar');
+  const pillarImg = advStyle === 'advanced' ? getBiomeImg(getLevelBiome(), 'pillar') : null;
   if(pillarImg){
     const ratio = pillarImg.width / pillarImg.height;
     const drawH = pl.h;
@@ -1312,7 +1407,7 @@ function drawFlag(f){
   const killed  = enemies.filter(e=>!e.alive).length;
   const unlocked = totalEn === 0 || killed / totalEn >= 0.75;
 
-  const gateImg = getGateImg(!unlocked);
+  const gateImg = advStyle === 'advanced' ? getGateImg(!unlocked) : null;
   if(gateImg){
     ctx.drawImage(gateImg, f.x, f.y, f.w, f.h);
   } else {
@@ -1531,6 +1626,7 @@ function drawMummy(bob){
 
 // ── Arrière-plan avancé — image parallaxe ─────────────────────
 function drawBgAdv(c){
+  if(advStyle !== 'advanced'){ drawBg(c); return; }
   const bg = getLevelBgImage(GS.level);
   if(!bg){ drawBg(c); return; }
 
@@ -1556,6 +1652,14 @@ function drawRepeatedSprite(img, x, y, width, targetH){
 }
 
 function drawGroundStripAdv(gY){
+  if(advStyle !== 'advanced'){
+    const lvl2 = LEVELS[GS.level] || LEVELS[0];
+    const c2 = getLvlColors(lvl2);
+    ctx.fillStyle = c2.ground;
+    ctx.fillRect(0, gY - 15, worldW, H - (gY - 15));
+    return;
+  }
+
   const biome = getLevelBiome();
   const topImg = getBiomeImg(biome, 'groundPlatform');
   const bodyImg = getBiomeImg(biome, 'ground');
@@ -1579,6 +1683,11 @@ function drawGroundStripAdv(gY){
 
 // ── Plateformes flottantes (sprite-based) ─────────────────────
 function drawPlatformAdv(p, lvl){
+  if(advStyle !== 'advanced'){
+    drawPlatform(p, lvl);
+    return;
+  }
+
   if(p.type !== 'ground'){
     const floatingImg = getBiomeImg(getLevelBiome(), 'floating');
     if(floatingImg){
@@ -2275,12 +2384,15 @@ function buildChestQuestion(){
     btn.addEventListener('touchend',e=>{e.preventDefault();h();},{passive:false});
     container.appendChild(btn);
   });
+  QK.selectedBtn = null;
+  syncQuestionKeyboardSelection();
   document.getElementById('qHP').innerHTML=
     `<span style="font-size:13px;color:#ffd700">${hearts} — 3 bonnes réponses d'affilée !</span>`;
 }
 
 function openChestQuestion(){
   if(QS.active) return;
+  clearMoveKeys();
   QS.active=true; QS.enemy=null;
   CQ.active=true; CQ.streak=0;
   buildChestQuestion();
@@ -2292,6 +2404,8 @@ function chestAnswerClick(answer){
   if(!QS.active) return;
   const btns=document.querySelectorAll('.qBtn');
   btns.forEach(b=>b.disabled=true);
+  QK.selectedBtn = null;
+  syncQuestionKeyboardSelection();
   btns.forEach(b=>{
     if(b.textContent===QS.q.correct) b.classList.add('ok');
     if(b.textContent===answer&&answer!==QS.q.correct) b.classList.add('bad');
@@ -2432,7 +2546,7 @@ function drawChest(){
 // ── Dessin intérieur château ─────────────────────────────────
 
 function drawCastleRoom(){
-  const towerInside = readyImage(commonLevelImages.towerInside);
+  const towerInside = advStyle === 'advanced' ? readyImage(commonLevelImages.towerInside) : null;
   if(towerInside){
     ctx.drawImage(towerInside, 0, 0, W, H);
     // Slight bottom darkening for better gameplay readability.
@@ -2591,7 +2705,7 @@ function drawCastleSprite(ca, c){
   const sxScreen = ca.x - camX;
   if(sxScreen > W + 240 || sxScreen + ca.w < -240) return;
 
-  const towerImg = readyImage(commonLevelImages.tower);
+  const towerImg = advStyle === 'advanced' ? readyImage(commonLevelImages.tower) : null;
   if(towerImg){
     ctx.drawImage(towerImg, ca.x, ca.y, ca.w, ca.h);
   } else {
