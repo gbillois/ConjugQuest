@@ -984,7 +984,13 @@ function updatePhysics(dt){
 
   // Drapeau
   if(flag && rectsTouch(player,{x:flag.x,y:flag.y,w:flag.w,h:flag.h})){
-    triggerLevelComplete();
+    const totalEn  = enemies.length;
+    const killedEn = enemies.filter(e=>!e.alive).length;
+    if(totalEn === 0 || killedEn / totalEn > 0.5){
+      triggerLevelComplete();
+    } else {
+      showStarGain(flag.x - 30, flag.y - 20, `Bats encore ${Math.ceil(totalEn * 0.5 + 1) - killedEn} ennemi(s) !`);
+    }
   }
 }
 
@@ -1261,16 +1267,47 @@ function starPath(cx,cy,r1,r2,pts){
 
 // ── Drapeau ───────────────────────────────────────────────────
 function drawFlag(f){
-  ctx.fillStyle='#888';
+  const totalEn  = enemies.length;
+  const killedEn = enemies.filter(e=>!e.alive).length;
+  const locked   = totalEn > 0 && killedEn / totalEn <= 0.5;
+
+  ctx.fillStyle = locked ? '#555' : '#888';
   ctx.fillRect(f.x+4,f.y,5,f.h);
-  const w=Math.sin(Date.now()*.003)*4;
-  ctx.fillStyle='#ef4444';
-  ctx.beginPath();
-  ctx.moveTo(f.x+9,f.y);
-  ctx.lineTo(f.x+9+26,f.y+11+w);
-  ctx.lineTo(f.x+9+22,f.y+22+w*.6);
-  ctx.lineTo(f.x+9,f.y+22);
-  ctx.fill();
+
+  if(locked){
+    // Drapeau grisé avec cadenas
+    ctx.fillStyle='#666';
+    ctx.beginPath();
+    ctx.moveTo(f.x+9,f.y);
+    ctx.lineTo(f.x+9+26,f.y+11);
+    ctx.lineTo(f.x+9+22,f.y+22);
+    ctx.lineTo(f.x+9,f.y+22);
+    ctx.fill();
+    // Cadenas
+    const lx = f.x + 2, ly = f.y + 38;
+    ctx.fillStyle='#f59e0b';
+    ctx.beginPath(); ctx.arc(lx+8,ly+6,5,Math.PI,0); ctx.stroke();
+    ctx.fillStyle='#f59e0b';
+    ctx.fillRect(lx+2,ly+5,12,10);
+    ctx.fillStyle='#78350f';
+    ctx.fillRect(lx+6,ly+8,4,4);
+    // Texte ratio
+    ctx.fillStyle='#fff';
+    ctx.font='bold 11px monospace';
+    ctx.textAlign='center';
+    ctx.fillText(`${killedEn}/${Math.ceil(totalEn*0.5+1)-1}`, f.x+16, f.y+65);
+    ctx.textAlign='left';
+  } else {
+    const w=Math.sin(Date.now()*.003)*4;
+    ctx.fillStyle='#ef4444';
+    ctx.beginPath();
+    ctx.moveTo(f.x+9,f.y);
+    ctx.lineTo(f.x+9+26,f.y+11+w);
+    ctx.lineTo(f.x+9+22,f.y+22+w*.6);
+    ctx.lineTo(f.x+9,f.y+22);
+    ctx.fill();
+  }
+
   ctx.fillStyle='#555';
   ctx.fillRect(f.x,f.y+f.h,22,8);
 }
