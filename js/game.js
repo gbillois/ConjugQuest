@@ -346,7 +346,8 @@ function generateLevel(lvl) {
   worldW = segW * (lvl.numEnemies + 4) + 300;
 
   // ── Château — positionné EN PREMIER pour réserver sa zone ────
-  const caW = 200, caH = 220;
+  // Biome castle sprite: 128×160 at 2× = 256×320
+  const caW = 256, caH = 320;
   const caX = Math.floor(worldW * (0.33 + Math.random() * 0.34));
   castle = { x: caX, y: gY - caH, w: caW, h: caH };
   castleChestState = 'closed';
@@ -445,8 +446,8 @@ function generateLevel(lvl) {
     platforms.push({ x:topX, y:gY-ph2, w:topW, h:14, type:'platform' });
   }
 
-  // Portail de fin de niveau
-  flag = { x: worldW-160, y: gY-80, w:80, h:80 };
+  // Portail de fin de niveau — biome gate sprite 80×112 at 2× = 160×224
+  flag = { x: worldW-220, y: gY-224, w:160, h:224 };
   castleRewardCoins = 0;
 
   // Player spawn
@@ -1077,6 +1078,7 @@ function setSprStyle(s){
 // ════════════════════════════════════════════════════════════════
 
 function render(){
+  ctx.imageSmoothingEnabled = false;
   const lvl = LEVELS[GS.level];
   const c = getLvlColors(lvl);
 
@@ -1094,14 +1096,14 @@ function render(){
   for(const pl of pillars) drawPillar(pl, c);
 
   // Sol continu (mode avancé : bande unique tilée)
-  if(advStyle==='advanced' && platGroundReady){
+  if(advStyle==='advanced'){
     drawGroundStripAdv(H - 55);
   }
 
   // Plateformes
   for(const p of platforms){
     // En mode avancé, le sol est dessiné en bande continue ci-dessus
-    if(p.type==='ground' && advStyle==='advanced' && platGroundReady) continue;
+    if(p.type==='ground' && advStyle==='advanced') continue;
     if(advStyle==='advanced') drawPlatformAdv(p, c); else drawPlatform(p, c);
   }
 
@@ -1429,10 +1431,8 @@ function drawPlayerAdvFallback(p){
 function drawGoblinAdv(bob){
   if(!goblinSpritesReady){ drawGoblin(bob); return; }
   const frame = Math.floor(Date.now()/120) % 6;
-  // East frames only — parent ctx.scale(e.facing,1) handles left-facing mirror
-  const img = GOBLIN_SPRITES.east[frame];
-  // Draw at 2× (96×96) to match paladin scale (56px→112px)
-  ctx.drawImage(img, -48, -96+bob, 96, 96);
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(GOBLIN_SPRITES.east[frame], -48, -96+bob, 96, 96);
 }
 
 function drawSkeletonAdv(bob){
@@ -1459,8 +1459,8 @@ function drawDragonAdv(bob){
 function drawMummyAdv(bob){
   if(!mummySpritesReady){ drawMummy(bob); return; }
   const frame = Math.floor(Date.now()/160) % 6;
-  const img = MUMMY_SPRITES.east[frame];
-  ctx.drawImage(img, -48, -96+bob, 96, 96);
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(MUMMY_SPRITES.east[frame], -48, -96+bob, 96, 96);
 }
 
 // ── Biome enemies (PixelLab sprites) ──────────────────────────
@@ -1471,6 +1471,8 @@ function drawBiomeEnemyAdv(loader, fallbackColor, bob){
     return;
   }
   const frame = Math.floor(Date.now()/150) % 6;
+  // Sprite is 48×48px, drawn at 2× = 96×96, centred on bottom-centre of hitbox
+  ctx.imageSmoothingEnabled = false;
   ctx.drawImage(loader.sprites.east[frame], -48, -96+bob, 96, 96);
 }
 function drawForestSpriteAdv(bob)       { drawBiomeEnemyAdv(FOREST_SPRITE_LOADER,    '#2d7a2d', bob); }
@@ -1537,16 +1539,13 @@ function drawBgAdv(c){
 // ground platform.png (1536×1024 RGBA) — contenu : x=165..1373 y=310..627 (1209×318)
 // On crop le centre (sans les bords arrondis) pour un tiling continu
 // Tile a tileset PNG seamlessly: picks a 16×16 body tile and repeats it
-function drawTiledStrip(tilesetImg, x, y, w, h, tileRow){
-  const tileSize = 16;
-  // tileRow: which row of tiles to use (0=top/surface, 1=middle body)
-  const sy = tileRow * tileSize;
-  const scale = h / tileSize;
-  const drawTileW = tileSize * scale;
-  for(let tx = x; tx < x + w; tx += drawTileW){
-    const clipW = Math.min(drawTileW, x + w - tx);
-    const srcClipW = clipW / scale;
-    ctx.drawImage(tilesetImg, 0, sy, srcClipW, tileSize, tx, y, clipW, h);
+function drawTiledStrip(tilesetImg, x, y, w, tileRow){
+  // Always renders at pixel-perfect 2× scale: 16px tile → 32px on screen
+  const TILE = 16, DRAW = 32;
+  const sy = tileRow * TILE;
+  for(let tx = x; tx < x + w; tx += DRAW){
+    const clipW = Math.min(DRAW, x + w - tx);
+    ctx.drawImage(tilesetImg, 0, sy, clipW / 2, TILE, tx, y, clipW, DRAW);
   }
 }
 
@@ -1554,19 +1553,29 @@ function drawGroundStripAdv(gY){
   const biome = (LEVELS[GS.level] || LEVELS[0]).biome || 'forest';
   const groundImg = getBiomeImg(biome, 'ground');
   if(groundImg){
-    const displayH = 80;
-    const drawY = gY - 15;
-    drawTiledStrip(groundImg, 0, drawY, worldW, displayH * 0.25, 0); // surface
-    drawTiledStrip(groundImg, 0, drawY + displayH * 0.25, worldW, displayH * 0.75, 1); // body
+    // Surface tile row (row 0) sits just above the collision y — centred on gY
+    drawTiledStrip(groundImg, 0, gY - 16, worldW, 0);
+    // Body tiles (row 1) fill downward to canvas bottom
+    for(let ty = gY + 16; ty < H + 32; ty += 32){
+      drawTiledStrip(groundImg, 0, ty, worldW, 1);
+    }
     return;
   }
-  const sx = 300, sy = 310, sw = 940, sh = 318;
-  const displayH = 80;
-  const tileW    = Math.round(displayH * (sw / sh));
-  const drawY    = gY - 15;
-  for(let tx = 0; tx < worldW; tx += tileW){
-    ctx.drawImage(platGroundImg, sx, sy, sw, sh, tx, drawY, tileW, displayH);
+  // Fallback: legacy sprite tiling
+  if(platGroundReady){
+    const sx = 300, sy = 310, sw = 940, sh = 318;
+    const displayH = 80;
+    const tileW = Math.round(displayH * (sw / sh));
+    for(let tx = 0; tx < worldW; tx += tileW){
+      ctx.drawImage(platGroundImg, sx, sy, sw, sh, tx, gY - 15, tileW, displayH);
+    }
+    return;
   }
+  // Final fallback: procedural ground
+  const lvl2 = LEVELS[GS.level] || LEVELS[0];
+  const c2 = getLvlColors(lvl2);
+  ctx.fillStyle = c2.ground;
+  ctx.fillRect(0, gY - 15, worldW, H - (gY - 15));
 }
 
 // ── Plateformes avancées (sprite-based) ──────────────────────
@@ -1575,7 +1584,8 @@ function drawPlatformAdv(p, lvl){
     const biome3 = (LEVELS[GS.level] || LEVELS[0]).biome || 'forest';
     const plat1Img = getBiomeImg(biome3, 'platform1');
     if(plat1Img){
-      drawTiledStrip(plat1Img, p.x, p.y, p.w, 20, 0);
+      // Draw at 2× height (32px), top-aligned at p.y
+      drawTiledStrip(plat1Img, p.x, p.y, p.w, 0);
       return;
     }
     if(platFloatReady){
