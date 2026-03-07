@@ -79,6 +79,10 @@ const HERO_SPRITES = {
 const PALADIN_SPRITES = HERO_SPRITES.knight;
 let paladinSpritesReady = false;
 
+// Y-offset (px) to shift sprite down so feet align with platform
+// (each sprite has transparent padding at the bottom — measured from actual PNG)
+const HERO_Y_OFFSETS = { knight: 4, mage: 12, ninja: 14, pirate: 12 };
+
 function loadHeroSprites(id, runFrames, jumpFrames){
   const base = HERO_BASES[id];
   const spr  = HERO_SPRITES[id];
@@ -1302,10 +1306,11 @@ function drawPlayerAdv(p){
     sprite = spr.idle[dir];
   }
 
-  // Draw sprite at 2× size (112×112)
+  // Draw sprite at 2× size (112×112), shifted down so feet align with platform
   const drawH = 112;
   const drawW = 112;
-  ctx.drawImage(sprite, -drawW/2, -drawH, drawW, drawH);
+  const yOff = HERO_Y_OFFSETS[skin] || 4;
+  ctx.drawImage(sprite, -drawW/2, -drawH + yOff, drawW, drawH);
 
   ctx.restore();
 }
@@ -1330,8 +1335,8 @@ function drawGoblinAdv(bob){
   const frame = Math.floor(Date.now()/120) % 6;
   // East frames only — parent ctx.scale(e.facing,1) handles left-facing mirror
   const img = GOBLIN_SPRITES.east[frame];
-  // Draw at 2× (96×96) to match paladin scale (56px→112px)
-  ctx.drawImage(img, -48, -96+bob, 96, 96);
+  // Draw at 2× (98×98); y adjusted so feet align with platform
+  ctx.drawImage(img, -49, -82+bob, 98, 98);
 }
 
 function drawSkeletonAdv(bob){
@@ -1359,7 +1364,8 @@ function drawMummyAdv(bob){
   if(!mummySpritesReady){ drawMummy(bob); return; }
   const frame = Math.floor(Date.now()/160) % 6;
   const img = MUMMY_SPRITES.east[frame];
-  ctx.drawImage(img, -48, -96+bob, 96, 96);
+  // Draw at 2× (98×98); y adjusted so feet align with platform
+  ctx.drawImage(img, -49, -84+bob, 98, 98);
 }
 
 // ── Mummy (simple — pixel art fallback) ───────────────────────
@@ -2341,23 +2347,26 @@ function drawCastleRoom(){
 
   // Joueur dans le château
   const cp=castlePlayer;
-  if(advStyle==='advanced' && paladinSpritesReady){
-    // Use paladin sprite in castle too
+  const castleSkin = SAVE.skin || 'knight';
+  const castleHeroSpr = HERO_SPRITES[castleSkin] || HERO_SPRITES.knight;
+  if(advStyle==='advanced' && castleHeroSpr.ready){
+    // Use selected hero skin in castle
     ctx.save();
     ctx.translate(cp.x+cp.w/2, cp.y+cp.h);
     const dir = cp.facing>=0 ? 'right' : 'left';
     let spr;
     if(!cp.onGround){
-      const jF = PALADIN_SPRITES.jump[dir];
+      const jF = castleHeroSpr.jump[dir];
       const t = Math.min(1, Math.max(0, (cp.vy - JUMP_V) / (-JUMP_V * 2)));
-      spr = jF[Math.min(jF.length-1, Math.floor(t*jF.length))];
+      spr = (jF && jF.length) ? jF[Math.min(jF.length-1, Math.floor(t*jF.length))] : castleHeroSpr.idle[dir];
     } else if(Math.abs(cp.vx)>0.5){
-      const rF = PALADIN_SPRITES.run[dir];
-      spr = rF[Math.floor(cp.walkT*1.5)%rF.length];
+      const rF = castleHeroSpr.run[dir];
+      spr = (rF && rF.length) ? rF[Math.floor(cp.walkT*1.5)%rF.length] : castleHeroSpr.idle[dir];
     } else {
-      spr = PALADIN_SPRITES.idle[dir];
+      spr = castleHeroSpr.idle[dir];
     }
-    ctx.drawImage(spr, -56, -112, 112, 112);
+    const castleYOff = HERO_Y_OFFSETS[castleSkin] || 4;
+    ctx.drawImage(spr, -56, -112 + castleYOff, 112, 112);
     ctx.restore();
   } else {
     ctx.save();
