@@ -388,10 +388,9 @@ function generateLevel(lvl) {
     }
   }
 
-  // Keep the area around the tower/castle completely sealed.
-  const castleGroundX = Math.max(0, caX - 80);
-  const castleGroundW = Math.min(worldW - castleGroundX, caW + 160);
-  platforms.push({ x: castleGroundX, y: gY, w: castleGroundW, h: 60, type: 'ground' });
+  // Seal the entire castle chunk with a single solid ground strip so there are no
+  // holes beneath or around the tower/castle sprite regardless of tile alignment.
+  platforms.push({ x: castleChunk.x, y: gY, w: castleChunk.w, h: 60, type: 'ground' });
 
   // ── Phase 4 : Floating platforms (gaps + above-ground variety) ─
   const floatPlats = [];
@@ -449,11 +448,14 @@ function generateLevel(lvl) {
   platforms.push(...floatPlats);
 
   // ── Phase 5 : Pillars / pipes on ground (Mario pipe style) ────
+  // ph is derived from the native sprite ratio (~0.53:1 at pw=32 → ~60 px tall).
+  // This makes the collision top align exactly with the visual sprite top so
+  // the player walks on the pillar without floating or sinking.
   const pipeCandidates = chunks.slice(1, -1).filter(c => c.w >= 160 && !inCastle(c.x, c.w));
   for (let i = 0; i < pipeCandidates.length; i += 2) {
     const c  = pipeCandidates[i];
-    const ph = rand(55, 120);
     const pw = 32;
+    const ph = Math.round(pw / 0.533);  // native sprite ratio (312/585 ≈ 0.533) → ~60 px
     const px = c.x + rand(50, Math.max(51, c.w - pw - 50));
     if (inCastle(px, pw)) continue;
     const pillar = { x: px, y: gY - ph, w: pw, h: ph + 60, type: 'pillar' };
@@ -462,16 +464,21 @@ function generateLevel(lvl) {
   }
 
   // ── Phase 6 : ? Blocks in Mario-style groups ──────────────────
+  // blockY is fixed at exactly the height the hero can reach at jump apex.
+  // Hero stands at gY-46, jumps ~104 px up, so hero top at apex ≈ gY-150.
+  // Block bottom must be ≥ hero-top-at-apex for the hit to register.
+  // blockY = gY - 180 → block bottom = gY - 146 (hittable, aligned with hero size).
+  // All groups share the same Y so they look uniformly placed across the level.
+  const BLOCK_Y = gY - 180;
   const brickTypes = ['life', 'life', 'coin', 'coin', 'coin'];
   for (const c of chunks.slice(1, -1)) {
     if (inCastle(c.x, c.w) || Math.random() < 0.3) continue;
     const groupSize = rand(1, 3);
-    const blockY    = gY - rand(170, 195);
     const startBX   = c.x + rand(20, Math.max(21, c.w - groupSize * 34 - 20));
     for (let g = 0; g < groupSize; g++) {
       const bx = startBX + g * 34;
       if (bx + 34 > c.x + c.w || inCastle(bx, 34)) break;
-      bricks.push({ x: bx, y: blockY, w: 34, h: 34,
+      bricks.push({ x: bx, y: BLOCK_Y, w: 34, h: 34,
                     type: pick(brickTypes), hit: false, jiggT: 0, offsetY: 0 });
     }
   }
@@ -556,6 +563,14 @@ function generateLevel(lvl) {
   const endW = Math.round(endH * gateRatio);
   flag = { x: worldW - 240, y: gY - endH + 4, w: endW, h: endH };
   castleRewardCoins = 0;
+
+  // Close the 100 px gap at the world end (between last chunk and worldW) so
+  // the player never falls through next to the end gate.
+  const lastCh = chunks[chunks.length - 1];
+  const gapStartX = lastCh.x + lastCh.w;
+  if (gapStartX < worldW) {
+    platforms.push({ x: gapStartX, y: gY, w: worldW - gapStartX + 5, h: 60, type: 'ground' });
+  }
 
   // ── Player spawn ──────────────────────────────────────────────
   player.x = 80;
@@ -1418,11 +1433,14 @@ function lighten(hex){
 function drawPillar(pl, lvl){
   const pillarImg = advStyle === 'advanced' ? getBiomeImg(getLevelBiome(), 'pillar') : null;
   if(pillarImg){
-    // Keep native pillar sprite proportions and avoid adding a fake top platform.
+    // Draw at native aspect ratio (pillar sprites are ~0.53:1, taller than wide).
+    // Bottom of sprite anchors to the visual ground so the column rises correctly.
+    // No fake platform added on top — the solid collision box handles walkability.
+    const groundY = H - 55;
     const drawW = pl.w;
-    const drawH = pl.h;
+    const drawH = Math.round(drawW * pillarImg.height / pillarImg.width);
     const drawX = pl.x;
-    const drawY = pl.y;
+    const drawY = groundY - drawH;  // bottom of sprite sits at ground level
     ctx.drawImage(pillarImg, drawX, drawY, drawW, drawH);
     return;
   }
@@ -1749,7 +1767,9 @@ function drawBgAdv(c){
 function drawRepeatedSprite(img, x, y, width, targetH){
   if(!img || targetH <= 0 || width <= 0) return;
   const tileW = Math.max(1, Math.round(targetH * (img.width / img.height)));
-  for(let tx = x; tx < x + width; tx += Math.max(1, tileW - 2)){
+  // Use tileW-1 step (1 px overlap) to prevent any sub-pixel gaps between tiles.
+  const step = Math.max(1, tileW - 1);
+  for(let tx = x; tx < x + width; tx += step){
     const drawW = Math.min(tileW, x + width - tx);
     const srcW = Math.max(1, Math.round(img.width * (drawW / tileW)));
     ctx.drawImage(img, 0, 0, srcW, img.height, tx, y, drawW, targetH);
@@ -1777,9 +1797,15 @@ function drawGroundStripAdv(gY, groundPlatforms){
 
   for(const ch of chunks){
     if(topImg && bodyImg){
-      drawRepeatedSprite(topImg,  ch.x, gY - 24, ch.w, 42);
-      for(let ty = gY + 14; ty < H + 28; ty += 25)
-        drawRepeatedSprite(bodyImg, ch.x, ty, ch.w, 28);
+      // Top surface strip: sprite drawn so the ground surface aligns with gY.
+      // Start 2 px before the chunk and extend 2 px past it to avoid clipping gaps
+      // at the chunk edges while still stopping cleanly at the hole boundary.
+      const ex = 2;  // edge extension in pixels
+      drawRepeatedSprite(topImg, ch.x - ex, gY - 24, ch.w + ex * 2, 42);
+      // Body tiles fill everything below the top strip down to (and past) canvas bottom.
+      // First row starts a few pixels inside the top sprite to create a seamless join.
+      for(let ty = gY + 10; ty < H + 40; ty += 26)
+        drawRepeatedSprite(bodyImg, ch.x - ex, ty, ch.w + ex * 2, 30);
     } else {
       ctx.fillStyle = c2.ground;
       ctx.fillRect(ch.x, gY - 15, ch.w, H - (gY - 15));
@@ -1798,11 +1824,12 @@ function drawPlatformAdv(p, lvl){
     if(p.nosprite) return;
     const floatingImg = getBiomeImg(getLevelBiome(), 'floating');
     if(floatingImg){
-      // Draw floating platforms at full sprite width and align collision to top walkable band.
-      const drawW = p.w;
-      const drawH = Math.max(24, Math.round(drawW * (floatingImg.height / floatingImg.width)));
-      const drawX = p.x;
-      const drawY = p.y - Math.round(drawH * 0.14);
+      // Draw at native aspect ratio using a fixed display height, centered on the collision box.
+      // The sprite top surface aligns just above the collision top (p.y) so characters stand on it.
+      const drawH = 48;  // fixed display height — larger than old 36px for a more substantial look
+      const drawW = Math.round(drawH * floatingImg.width / floatingImg.height);
+      const drawX = Math.round(p.x + p.w / 2 - drawW / 2);  // centre on collision box
+      const drawY = p.y - 4;  // tiny offset so the sprite top-surface lip shows above feet
       ctx.drawImage(floatingImg, drawX, drawY, drawW, drawH);
       return;
     }
@@ -2656,17 +2683,16 @@ function drawChest(){
 function drawCastleRoom(){
   const towerInside = advStyle === 'advanced' ? readyImage(commonLevelImages.towerInside) : null;
   if(towerInside){
-    // Respect tower-inside aspect ratio and center letterbox/pillarbox as needed.
-    const imgRatio = towerInside.width / towerInside.height;
-    const canvasRatio = W / H;
-    let drawW = W, drawH = H, drawX = 0, drawY = 0;
-    if(imgRatio > canvasRatio){
-      drawH = W / imgRatio;
-      drawY = (H - drawH) / 2;
-    } else {
-      drawW = H * imgRatio;
-      drawX = (W - drawW) / 2;
-    }
+    // Maintain the image's native aspect ratio while filling the full canvas height.
+    // The image is landscape (ratio ~1.5) on a portrait canvas (ratio ~0.75), so
+    // we scale to full height and let the sides extend beyond the canvas edges —
+    // the canvas clips them automatically. This ensures the floor area at the
+    // bottom of the canvas is covered by the room background art.
+    const imgRatio = towerInside.width / towerInside.height;  // e.g. 1536/1024 = 1.5
+    const drawH = H;
+    const drawW = Math.round(H * imgRatio);
+    const drawX = Math.round((W - drawW) / 2);  // negative → crops both sides equally
+    const drawY = 0;
     ctx.fillStyle = '#050509';
     ctx.fillRect(0, 0, W, H);
     ctx.drawImage(towerInside, drawX, drawY, drawW, drawH);
