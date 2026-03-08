@@ -81,10 +81,11 @@ canvas{position:absolute;top:0;left:0;width:100%;height:100%;image-rendering:pix
   max-width:480px;
   height:122px;
   flex-shrink:0;
-  display:flex;justify-content:space-between;align-items:center;
-  padding:10px 14px;
+  display:flex;justify-content:space-between;align-items:flex-start;
+  padding:10px 14px 0;
   pointer-events:none;
   background:var(--c-ctrl);
+  overflow:visible;
 }
 .dpad{display:flex;gap:12px;pointer-events:all;align-items:flex-end;}
 .cbtn{
@@ -99,8 +100,19 @@ canvas{position:absolute;top:0;left:0;width:100%;height:100%;image-rendering:pix
   filter:drop-shadow(0 2px 0 rgba(0,0,0,.35));
 }
 .cbtn.pressed{filter:brightness(1.22) drop-shadow(0 1px 0 rgba(0,0,0,.28));transform:translateY(2px) scale(.985);}
-#leftBtn,#rightBtn{width:112px;height:56px;margin-bottom:10px;}
-#jumpBtn{width:92px;height:92px;}
+/* Image area stays the same; padding-bottom doubles the hit zone downward */
+#leftBtn,#rightBtn{
+  width:112px;height:56px;
+  padding-bottom:56px;
+  background-size:112px 56px;
+  background-position:top center;
+}
+#jumpBtn{
+  width:92px;height:92px;
+  padding-bottom:92px;
+  background-size:92px 92px;
+  background-position:top center;
+}
 #leftBtn{background-image:url('assets/left.png');}
 #rightBtn{background-image:url('assets/right.png');}
 #jumpBtn{background-image:url('assets/up.png');}

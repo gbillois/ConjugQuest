@@ -772,10 +772,9 @@ function getEnabledQuestionButtons(){
 
 function syncQuestionKeyboardSelection(){
   const enabled = getEnabledQuestionButtons();
-  if(!enabled.length){
+  // Never auto-select — only highlight a button the player explicitly navigated to
+  if(!enabled.length || !enabled.includes(QK.selectedBtn)){
     QK.selectedBtn = null;
-  } else if(!QK.selectedBtn || !enabled.includes(QK.selectedBtn)){
-    QK.selectedBtn = enabled[0];
   }
   getQuestionButtons().forEach(b => b.classList.toggle('kbSel', b === QK.selectedBtn));
 }
