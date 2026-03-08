@@ -1654,14 +1654,14 @@ function drawBiomeEnemyAdv(loader, fallbackColor, bob, facing=1){
     ctx.fillRect(-24, -48+bob, 48, 48);
     return;
   }
-  const frame = Math.floor(Date.now()/150) % 6;
-  const dir = facing >= 0 ? 'west' : 'east';
+  const frame = 5 - (Math.floor(Date.now()/150) % 6);
+  const dir = facing >= 0 ? 'east' : 'west';
   const frames = loader.sprites[dir];
   const sideSprite = frames[frame];
   const sprite =
     (sideSprite && sideSprite.naturalWidth)
       ? sideSprite
-      : loader.sprites.west[frame];  // fallback to west (default idle direction)
+      : loader.sprites.east[frame];  // fallback to east
   if(!sprite || !sprite.naturalWidth){
     ctx.fillStyle = fallbackColor;
     ctx.fillRect(-24, -48+bob, 48, 48);
