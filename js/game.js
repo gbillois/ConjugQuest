@@ -336,6 +336,10 @@ function generateLevel(lvl) {
   camX=0;
 
   const gY = H - 55;
+  const GROUND_TILE_W = 200;
+  const GROUND_OVERLAP = 10;
+  const FLOAT_W = 112;
+  const FLOAT_H = 18;
   // Physics-derived jump limits (JUMP_V=-560, GRAV=1500, PSPEED=195)
   const MAX_JUMP_H = 90;   // safe max height reachable from ground
   const MAX_JUMP_W = 125;  // safe max gap width the player can cross
@@ -378,9 +382,16 @@ function generateLevel(lvl) {
 
   // ── Phase 3 : Ground platforms ────────────────────────────────
   for (const c of chunks) {
-    for (let x = c.x; x < c.x + c.w; x += 200)
-      platforms.push({ x, y: gY, w: Math.min(200, c.x + c.w - x), h: 60, type: 'ground' });
+    for (let x = c.x; x < c.x + c.w; x += (GROUND_TILE_W - GROUND_OVERLAP)) {
+      const w = Math.min(GROUND_TILE_W, c.x + c.w - x + GROUND_OVERLAP);
+      platforms.push({ x, y: gY, w, h: 60, type: 'ground' });
+    }
   }
+
+  // Keep the area around the tower/castle completely sealed.
+  const castleGroundX = Math.max(0, caX - 80);
+  const castleGroundW = Math.min(worldW - castleGroundX, caW + 160);
+  platforms.push({ x: castleGroundX, y: gY, w: castleGroundW, h: 60, type: 'ground' });
 
   // ── Phase 4 : Floating platforms (gaps + above-ground variety) ─
   const floatPlats = [];
@@ -391,10 +402,10 @@ function generateLevel(lvl) {
     const gapX = left.x + left.w;
     const gapW = right.x - gapX;
     if (Math.random() < 0.6) {
-      const pw = Math.min(gapW - 12, rand(50, 90));
+      const pw = Math.min(gapW - 12, FLOAT_W);
       const px = gapX + (gapW - pw) / 2;
       const py = gY - rand(30, 65);
-      floatPlats.push({ x: px, y: py, w: pw, h: 20, type: 'platform' });
+      floatPlats.push({ x: px, y: py, w: pw, h: FLOAT_H, type: 'platform' });
     }
   }
 
@@ -406,23 +417,23 @@ function generateLevel(lvl) {
     const pattern = pick(['single', 'single', 'pair', 'stair']);
 
     if (pattern === 'single') {
-      const pw = rand(80, 130);
+      const pw = FLOAT_W;
       const px = c.x + rand(20, Math.max(21, c.w - pw - 20));
       if (!inCastle(px, pw))
-        floatPlats.push({ x: px, y: gY - rand(60, MAX_JUMP_H), w: pw, h: 20, type: 'platform' });
+        floatPlats.push({ x: px, y: gY - rand(60, MAX_JUMP_H), w: pw, h: FLOAT_H, type: 'platform' });
 
     } else if (pattern === 'pair') {
       const h1 = rand(60, MAX_JUMP_H);
-      const pw1 = rand(70, 110), pw2 = rand(70, 110);
+      const pw1 = FLOAT_W, pw2 = FLOAT_W;
       const px1 = c.x + rand(10, Math.max(11, c.w / 2 - pw1));
       const px2 = c.x + c.w / 2 + rand(0, Math.max(1, c.w / 2 - pw2 - 10));
       const h2  = Math.max(55, h1 + rand(-18, 18));
-      if (!inCastle(px1, pw1)) floatPlats.push({ x: px1, y: gY - h1, w: pw1, h: 20, type: 'platform' });
-      if (!inCastle(px2, pw2)) floatPlats.push({ x: px2, y: gY - h2, w: pw2, h: 20, type: 'platform' });
+      if (!inCastle(px1, pw1)) floatPlats.push({ x: px1, y: gY - h1, w: pw1, h: FLOAT_H, type: 'platform' });
+      if (!inCastle(px2, pw2)) floatPlats.push({ x: px2, y: gY - h2, w: pw2, h: FLOAT_H, type: 'platform' });
 
     } else { // stair — ascending steps (classic Mario staircase)
       const steps  = rand(3, 4);
-      const stepW  = rand(50, 65);
+      const stepW  = FLOAT_W;
       const stepH  = rand(22, 32);
       const startX = c.x + rand(10, 40);
       const startH = rand(30, 50);
@@ -430,7 +441,7 @@ function generateLevel(lvl) {
         const sx = startX + s * (stepW + 4);
         const sy = gY - (startH + s * stepH);
         if (sx + stepW <= c.x + c.w && !inCastle(sx, stepW))
-          floatPlats.push({ x: sx, y: sy, w: stepW, h: 20, type: 'platform' });
+          floatPlats.push({ x: sx, y: sy, w: stepW, h: FLOAT_H, type: 'platform' });
       }
     }
   }
@@ -445,10 +456,9 @@ function generateLevel(lvl) {
     const pw = 32;
     const px = c.x + rand(50, Math.max(51, c.w - pw - 50));
     if (inCastle(px, pw)) continue;
-    pillars.push({ x: px, y: gY - ph, w: pw, h: ph + 60 });
-    const topW = pw + 10;
-    const topX = px + pw / 2 - topW / 2;
-    platforms.push({ x: topX, y: gY - ph, w: topW, h: 14, type: 'platform', nosprite: true });
+    const pillar = { x: px, y: gY - ph, w: pw, h: ph + 60, type: 'pillar' };
+    pillars.push(pillar);
+    platforms.push(pillar);
   }
 
   // ── Phase 6 : ? Blocks in Mario-style groups ──────────────────
@@ -456,10 +466,10 @@ function generateLevel(lvl) {
   for (const c of chunks.slice(1, -1)) {
     if (inCastle(c.x, c.w) || Math.random() < 0.3) continue;
     const groupSize = rand(1, 3);
-    const blockY    = gY - rand(145, 168);
-    const startBX   = c.x + rand(20, Math.max(21, c.w - groupSize * 42 - 20));
+    const blockY    = gY - rand(170, 195);
+    const startBX   = c.x + rand(20, Math.max(21, c.w - groupSize * 34 - 20));
     for (let g = 0; g < groupSize; g++) {
-      const bx = startBX + g * 42;
+      const bx = startBX + g * 34;
       if (bx + 34 > c.x + c.w || inCastle(bx, 34)) break;
       bricks.push({ x: bx, y: blockY, w: 34, h: 34,
                     type: pick(brickTypes), hit: false, jiggT: 0, offsetY: 0 });
@@ -1229,7 +1239,8 @@ function resolveAABB(a, b){
   if(!rectsTouch(a,b)) return;
   // Plateformes flottantes : one-way (traversables par dessous)
   if(b.type === 'platform'){
-    if(a.vy >= 0 && a.y + a.h - a.vy * 0.05 <= b.y + 4){
+    // Floating platform sprite has a visible rim; give a slightly deeper top snap window.
+    if(a.vy >= 0 && a.y + a.h - a.vy * 0.05 <= b.y + 10){
       a.y = b.y - a.h; a.vy = 0; a.onGround = true;
     }
     return;
@@ -1407,10 +1418,10 @@ function lighten(hex){
 function drawPillar(pl, lvl){
   const pillarImg = advStyle === 'advanced' ? getBiomeImg(getLevelBiome(), 'pillar') : null;
   if(pillarImg){
-    const ratio = pillarImg.width / pillarImg.height;
+    // Keep native pillar sprite proportions and avoid adding a fake top platform.
+    const drawW = pl.w;
     const drawH = pl.h;
-    const drawW = Math.max(24, Math.round(drawH * ratio));
-    const drawX = pl.x + pl.w / 2 - drawW / 2;
+    const drawX = pl.x;
     const drawY = pl.y;
     ctx.drawImage(pillarImg, drawX, drawY, drawW, drawH);
     return;
@@ -1783,14 +1794,15 @@ function drawPlatformAdv(p, lvl){
     return;
   }
 
-  if(p.type !== 'ground'){
+  if(p.type !== 'ground' && p.type !== 'pillar'){
     if(p.nosprite) return;
     const floatingImg = getBiomeImg(getLevelBiome(), 'floating');
     if(floatingImg){
-      const drawW = p.w + 22;
+      // Draw floating platforms at full sprite width and align collision to top walkable band.
+      const drawW = p.w;
       const drawH = Math.max(24, Math.round(drawW * (floatingImg.height / floatingImg.width)));
-      const drawX = p.x - 11;
-      const drawY = p.y - Math.round(drawH * 0.18);
+      const drawX = p.x;
+      const drawY = p.y - Math.round(drawH * 0.14);
       ctx.drawImage(floatingImg, drawX, drawY, drawW, drawH);
       return;
     }
@@ -2644,7 +2656,20 @@ function drawChest(){
 function drawCastleRoom(){
   const towerInside = advStyle === 'advanced' ? readyImage(commonLevelImages.towerInside) : null;
   if(towerInside){
-    ctx.drawImage(towerInside, 0, 0, W, H);
+    // Respect tower-inside aspect ratio and center letterbox/pillarbox as needed.
+    const imgRatio = towerInside.width / towerInside.height;
+    const canvasRatio = W / H;
+    let drawW = W, drawH = H, drawX = 0, drawY = 0;
+    if(imgRatio > canvasRatio){
+      drawH = W / imgRatio;
+      drawY = (H - drawH) / 2;
+    } else {
+      drawW = H * imgRatio;
+      drawX = (W - drawW) / 2;
+    }
+    ctx.fillStyle = '#050509';
+    ctx.fillRect(0, 0, W, H);
+    ctx.drawImage(towerInside, drawX, drawY, drawW, drawH);
     // Slight bottom darkening for better gameplay readability.
     ctx.fillStyle = 'rgba(0,0,0,.18)';
     ctx.fillRect(0, H - 180, W, 180);
