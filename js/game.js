@@ -1281,13 +1281,13 @@ function render(){
   // Colonnes décoratives
   for(const pl of pillars) drawPillar(pl, c);
 
-  // Sol continu
-  drawGroundStripAdv(H - 55);
+  // Sol — dessiné uniquement sur les chunks (les trous restent vides)
+  const groundTiles = platforms.filter(p => p.type === 'ground');
+  drawGroundStripAdv(H - 55, groundTiles);
 
   // Plateformes flottantes
   for(const p of platforms){
-    // Le sol est dessiné par drawGroundStripAdv
-    if(p.type==='ground') continue;
+    if(p.type === 'ground') continue;
     drawPlatformAdv(p, c);
   }
 
@@ -1746,34 +1746,35 @@ function drawRepeatedSprite(img, x, y, width, targetH){
   }
 }
 
-function drawGroundStripAdv(gY){
-  if(advStyle !== 'advanced'){
-    const lvl2 = LEVELS[GS.level] || LEVELS[0];
-    const c2 = getLvlColors(lvl2);
-    ctx.fillStyle = c2.ground;
-    ctx.fillRect(0, gY - 15, worldW, H - (gY - 15));
-    return;
-  }
-
+function drawGroundStripAdv(gY, groundPlatforms){
+  const lvl2  = LEVELS[GS.level] || LEVELS[0];
+  const c2    = getLvlColors(lvl2);
   const biome = getLevelBiome();
-  const topImg = getBiomeImg(biome, 'groundPlatform');
-  const bodyImg = getBiomeImg(biome, 'ground');
+  const topImg  = advStyle === 'advanced' ? getBiomeImg(biome, 'groundPlatform') : null;
+  const bodyImg = advStyle === 'advanced' ? getBiomeImg(biome, 'ground')         : null;
 
-  if(topImg && bodyImg){
-    const topH = 42;
-    const bodyH = 28;
-    drawRepeatedSprite(topImg, 0, gY - 24, worldW, topH);
-    for(let ty = gY + 14; ty < H + bodyH; ty += bodyH - 3){
-      drawRepeatedSprite(bodyImg, 0, ty, worldW, bodyH);
+  // Merge adjacent ground tiles into contiguous draw-chunks
+  const sorted = [...groundPlatforms].sort((a, b) => a.x - b.x);
+  const chunks = [];
+  for(const p of sorted){
+    const last = chunks[chunks.length - 1];
+    if(last && p.x <= last.x + last.w + 2){
+      last.w = Math.max(last.w, p.x + p.w - last.x);
+    } else {
+      chunks.push({ x: p.x, w: p.w });
     }
-    return;
   }
 
-  // Fallback procédural
-  const lvl2 = LEVELS[GS.level] || LEVELS[0];
-  const c2 = getLvlColors(lvl2);
-  ctx.fillStyle = c2.ground;
-  ctx.fillRect(0, gY - 15, worldW, H - (gY - 15));
+  for(const ch of chunks){
+    if(topImg && bodyImg){
+      drawRepeatedSprite(topImg,  ch.x, gY - 24, ch.w, 42);
+      for(let ty = gY + 14; ty < H + 28; ty += 25)
+        drawRepeatedSprite(bodyImg, ch.x, ty, ch.w, 28);
+    } else {
+      ctx.fillStyle = c2.ground;
+      ctx.fillRect(ch.x, gY - 15, ch.w, H - (gY - 15));
+    }
+  }
 }
 
 // ── Plateformes flottantes (sprite-based) ─────────────────────
