@@ -335,126 +335,219 @@ function generateLevel(lvl) {
   bricks=[]; bonuses=[]; pillars=[];
   camX=0;
 
-  const gY   = H - 55;    // y sol
-  const segW = 380;        // largeur par segment (plus long)
-  worldW = segW * (lvl.numEnemies + 4) + 300;
+  const gY = H - 55;
+  // Physics-derived jump limits (JUMP_V=-560, GRAV=1500, PSPEED=195)
+  const MAX_JUMP_H = 90;   // safe max height reachable from ground
+  const MAX_JUMP_W = 125;  // safe max gap width the player can cross
 
-  // ── Château (tour centrale) — positionné EN PREMIER ──────────
+  // ── Phase 1 : Ground chunks separated by jumpable gaps ────────
+  const chunks = [];   // { x, w }
+  let curX = 0;
+
+  // Safe start zone — no enemies, no gaps
+  chunks.push({ x: 0, w: 250 });
+  curX = 250;
+
+  const totalChunks = lvl.numEnemies + 5;
+  for (let i = 0; i < totalChunks; i++) {
+    curX += rand(85, MAX_JUMP_W);           // gap
+    chunks.push({ x: curX, w: rand(190, 350) });
+    curX += chunks[chunks.length - 1].w;
+  }
+
+  // Safe end zone — clear ground before the flag
+  curX += rand(80, 115);
+  chunks.push({ x: curX, w: 310 });
+  curX += 310;
+  worldW = curX + 100;
+
+  // ── Phase 2 : Castle (mid-world, centred on a chunk) ──────────
   const caH = 300;
   const towerImgReady = readyImage(commonLevelImages.tower);
-  const towerRatio = towerImgReady ? (towerImgReady.width / towerImgReady.height) : 0.51;
+  const towerRatio    = towerImgReady ? (towerImgReady.width / towerImgReady.height) : 0.51;
   const caW = Math.round(caH * towerRatio);
-  const caX = Math.floor(worldW * (0.33 + Math.random() * 0.34));
+  const midTarget = worldW * (0.42 + Math.random() * 0.18);
+  const castleChunk = chunks.slice(1, -1).reduce((best, c) =>
+    Math.abs(c.x + c.w / 2 - midTarget) < Math.abs(best.x + best.w / 2 - midTarget) ? c : best
+  );
+  const caX = Math.round(castleChunk.x + (castleChunk.w - caW) / 2);
   castle = { x: caX, y: gY - caH, w: caW, h: caH };
   castleChestState = 'closed';
-  const caMargin = 30; // clear zone around castle
-  function inCastleZone(x, w){ return x + w > caX - caMargin && x < caX + caW + caMargin; }
+  const caMargin = 40;
+  function inCastle(x, w) { return x + w > caX - caMargin && x < caX + caW + caMargin; }
 
-  // Sol (tuiles)
-  for(let x=0; x<worldW; x+=200)
-    platforms.push({x, y:gY, w:200, h:60, type:'ground'});
-
-  // Plateformes flottantes (skip castle zone)
-  const floatPlats = [];
-  let cx = 240;
-  for(let i=0; i<lvl.numEnemies+5; i++){
-    const pw = rand(90,170);
-    if(cx + pw >= worldW - 280) break;
-    if(!inCastleZone(cx, pw)){
-      const ph = gY - rand(60,90);
-      floatPlats.push({x:cx, y:ph, w:pw, h:20, type:'platform'});
-    }
-    cx += segW - 60 + rand(0,80);
+  // ── Phase 3 : Ground platforms ────────────────────────────────
+  for (const c of chunks) {
+    for (let x = c.x; x < c.x + c.w; x += 200)
+      platforms.push({ x, y: gY, w: Math.min(200, c.x + c.w - x), h: 60, type: 'ground' });
   }
+
+  // ── Phase 4 : Floating platforms (gaps + above-ground variety) ─
+  const floatPlats = [];
+
+  // Mid-gap bridge platforms (60 % of gaps — keep gaps challenging but passable)
+  for (let i = 0; i < chunks.length - 1; i++) {
+    const left = chunks[i], right = chunks[i + 1];
+    const gapX = left.x + left.w;
+    const gapW = right.x - gapX;
+    if (Math.random() < 0.6) {
+      const pw = Math.min(gapW - 12, rand(50, 90));
+      const px = gapX + (gapW - pw) / 2;
+      const py = gY - rand(30, 65);
+      floatPlats.push({ x: px, y: py, w: pw, h: 20, type: 'platform' });
+    }
+  }
+
+  // Above-ground platforms with Mario-style layout patterns
+  for (const c of chunks) {
+    if (c === chunks[0] || c === chunks[chunks.length - 1]) continue;
+    if (inCastle(c.x, c.w) || c.w < 160) continue;
+
+    const pattern = pick(['single', 'single', 'pair', 'stair']);
+
+    if (pattern === 'single') {
+      const pw = rand(80, 130);
+      const px = c.x + rand(20, Math.max(21, c.w - pw - 20));
+      if (!inCastle(px, pw))
+        floatPlats.push({ x: px, y: gY - rand(60, MAX_JUMP_H), w: pw, h: 20, type: 'platform' });
+
+    } else if (pattern === 'pair') {
+      const h1 = rand(60, MAX_JUMP_H);
+      const pw1 = rand(70, 110), pw2 = rand(70, 110);
+      const px1 = c.x + rand(10, Math.max(11, c.w / 2 - pw1));
+      const px2 = c.x + c.w / 2 + rand(0, Math.max(1, c.w / 2 - pw2 - 10));
+      const h2  = Math.max(55, h1 + rand(-18, 18));
+      if (!inCastle(px1, pw1)) floatPlats.push({ x: px1, y: gY - h1, w: pw1, h: 20, type: 'platform' });
+      if (!inCastle(px2, pw2)) floatPlats.push({ x: px2, y: gY - h2, w: pw2, h: 20, type: 'platform' });
+
+    } else { // stair — ascending steps (classic Mario staircase)
+      const steps  = rand(3, 4);
+      const stepW  = rand(50, 65);
+      const stepH  = rand(22, 32);
+      const startX = c.x + rand(10, 40);
+      const startH = rand(30, 50);
+      for (let s = 0; s < steps; s++) {
+        const sx = startX + s * (stepW + 4);
+        const sy = gY - (startH + s * stepH);
+        if (sx + stepW <= c.x + c.w && !inCastle(sx, stepW))
+          floatPlats.push({ x: sx, y: sy, w: stepW, h: 20, type: 'platform' });
+      }
+    }
+  }
+
   platforms.push(...floatPlats);
 
-  // Ennemis sur les plateformes (1 par plateforme)
-  const enemyPlats  = floatPlats.slice(1, lvl.numEnemies+1); // skip first plat (start area)
-  const enemyCount  = Math.min(lvl.numEnemies, enemyPlats.length);
-  const levelEnemyTypes =
-    (Array.isArray(lvl.enemyTypes) && lvl.enemyTypes.length)
-      ? lvl.enemyTypes
-      : [lvl.enemyType || 'goblin'];
-  const levelVerbDatas = generateLevelVerbDatas(enemyCount);
-  for(let i=0; i<enemyCount; i++){
-    const p  = enemyPlats[i];
-    const vd = levelVerbDatas[i];
-    enemies.push({
-      x: p.x + p.w/2 - 16,
-      y: p.y - 44,
-      w: 32, h: 44,
-      vx: pick([-45,45]),
-      platX: p.x, platW: p.w,
-      alive: true,
-      type:  levelEnemyTypes[i % levelEnemyTypes.length],
-      facing:1,
-      walkT: 0,
-      alert: false,
-      verbData: vd,
-    });
+  // ── Phase 5 : Pillars / pipes on ground (Mario pipe style) ────
+  const pipeCandidates = chunks.slice(1, -1).filter(c => c.w >= 160 && !inCastle(c.x, c.w));
+  for (let i = 0; i < pipeCandidates.length; i += 2) {
+    const c  = pipeCandidates[i];
+    const ph = rand(55, 120);
+    const pw = 32;
+    const px = c.x + rand(50, Math.max(51, c.w - pw - 50));
+    if (inCastle(px, pw)) continue;
+    pillars.push({ x: px, y: gY - ph, w: pw, h: ph + 60 });
+    const topW = pw + 10;
+    const topX = px + pw / 2 - topW / 2;
+    platforms.push({ x: topX, y: gY - ph, w: topW, h: 14, type: 'platform', nosprite: true });
   }
 
-  // Étoiles sur les plateformes sans ennemi
-  for(let i=0; i<floatPlats.length; i++){
-    const p = floatPlats[i];
-    const hasEnemy = enemies.some(e => e.platX === p.x);
-    if(!hasEnemy){
-      const n = rand(1,3);
-      for(let j=0;j<n;j++){
-        stars_list.push({ x:p.x+10+j*28, y:p.y-22, w:18, h:18,
-                          collected:false, phase:Math.random()*Math.PI*2 });
-      }
+  // ── Phase 6 : ? Blocks in Mario-style groups ──────────────────
+  const brickTypes = ['life', 'life', 'coin', 'coin', 'coin'];
+  for (const c of chunks.slice(1, -1)) {
+    if (inCastle(c.x, c.w) || Math.random() < 0.3) continue;
+    const groupSize = rand(1, 3);
+    const blockY    = gY - rand(145, 168);
+    const startBX   = c.x + rand(20, Math.max(21, c.w - groupSize * 42 - 20));
+    for (let g = 0; g < groupSize; g++) {
+      const bx = startBX + g * 42;
+      if (bx + 34 > c.x + c.w || inCastle(bx, 34)) break;
+      bricks.push({ x: bx, y: blockY, w: 34, h: 34,
+                    type: pick(brickTypes), hit: false, jiggT: 0, offsetY: 0 });
+    }
+  }
+
+  // ── Phase 7 : Enemies (mix of ground walkers + platform guards) ─
+  const levelEnemyTypes =
+    (Array.isArray(lvl.enemyTypes) && lvl.enemyTypes.length)
+      ? lvl.enemyTypes : [lvl.enemyType || 'goblin'];
+  const levelVerbDatas = generateLevelVerbDatas(lvl.numEnemies);
+
+  const validChunks = chunks.slice(1, -1).filter(c => c.w >= 100 && !inCastle(c.x, c.w));
+  const validPlats  = floatPlats.filter(p => !p.nosprite && p.w >= 70);
+
+  let enemyIdx = 0;
+  const groundTarget = Math.ceil(lvl.numEnemies * 0.55);
+  const platTarget   = lvl.numEnemies - groundTarget;
+
+  // Ground enemies — one per chunk, shuffled
+  const shuffledChunks = [...validChunks].sort(() => Math.random() - 0.5);
+  for (let i = 0; i < groundTarget && i < shuffledChunks.length && enemyIdx < lvl.numEnemies; i++) {
+    const c  = shuffledChunks[i];
+    const ex = c.x + rand(20, Math.max(21, c.w - 52));
+    enemies.push({
+      x: ex, y: gY - 44, w: 32, h: 44,
+      vx: pick([-45, 45]),
+      platX: c.x, platW: c.w,
+      alive: true,
+      type: levelEnemyTypes[enemyIdx % levelEnemyTypes.length],
+      facing: 1, walkT: 0, alert: false,
+      verbData: levelVerbDatas[enemyIdx],
+    });
+    enemyIdx++;
+  }
+
+  // Platform enemies
+  const shuffledPlats = [...validPlats].sort(() => Math.random() - 0.5);
+  for (let i = 0; i < platTarget && i < shuffledPlats.length && enemyIdx < lvl.numEnemies; i++) {
+    const p = shuffledPlats[i];
+    enemies.push({
+      x: p.x + p.w / 2 - 16, y: p.y - 44, w: 32, h: 44,
+      vx: pick([-45, 45]),
+      platX: p.x, platW: p.w,
+      alive: true,
+      type: levelEnemyTypes[enemyIdx % levelEnemyTypes.length],
+      facing: 1, walkT: 0, alert: false,
+      verbData: levelVerbDatas[enemyIdx],
+    });
+    enemyIdx++;
+  }
+
+  // ── Phase 8 : Stars ───────────────────────────────────────────
+  // On enemy-free platforms
+  for (const p of floatPlats) {
+    if (p.nosprite) continue;
+    const hasEnemy = enemies.some(e => e.platX === p.x && e.platW === p.w);
+    if (hasEnemy || Math.random() < 0.4) continue;
+    const n = rand(1, 3);
+    for (let j = 0; j < n; j++)
+      stars_list.push({ x: p.x + 10 + j * 28, y: p.y - 22, w: 18, h: 18,
+                        collected: false, phase: Math.random() * Math.PI * 2 });
+  }
+  // Floating star rows above ground (Mario coin-row style)
+  for (const c of chunks.slice(1, -2)) {
+    if (inCastle(c.x, c.w) || Math.random() < 0.55) continue;
+    const rowLen = rand(2, 5);
+    const rowY   = gY - rand(65, 105);
+    const startX = c.x + rand(10, Math.max(11, c.w - rowLen * 28 - 10));
+    for (let s = 0; s < rowLen; s++) {
+      const sx = startX + s * 28;
+      if (sx + 18 > c.x + c.w) break;
+      stars_list.push({ x: sx, y: rowY, w: 18, h: 18,
+                        collected: false, phase: Math.random() * Math.PI * 2 });
     }
   }
   GS.maxStars = stars_list.length;
   GS.stars    = 0;
 
-  // ── Blocs à frapper (❓) — skip castle zone ───────────────────
-  const brickTypes = ['life','life','coin','coin','coin'];
-  const brickSpacing = Math.floor(worldW / 7);
-  for(let bx=brickSpacing; bx<worldW-200; bx+=brickSpacing+rand(-40,40)){
-    if(inCastleZone(bx, 34)) continue;
-    bricks.push({
-      x: bx, y: gY - rand(155,170),
-      w: 34, h: 34,
-      type: pick(brickTypes),
-      hit: false,
-      jiggT: 0, offsetY: 0,
-    });
-  }
-
-  // ── Plateformes au sol (petites surélévations) — skip castle zone ─
-  const groundPlatCount = rand(1, 3);
-  const gpSpacing = Math.floor(worldW / (groundPlatCount + 2));
-  for(let i=0; i<groundPlatCount; i++){
-    const gpx = gpSpacing * (i+1) + rand(-60, 60);
-    const gpw = rand(90, 160);
-    if(gpx > 200 && gpx + gpw < worldW - 200 && !inCastleZone(gpx, gpw)){
-      platforms.push({x:gpx, y:gY - rand(25, 45), w:gpw, h:20, type:'platform'});
-    }
-  }
-
-  // ── Colonnes — skip castle zone ───────────────────────────────
-  const pillarSpacing = 320;
-  for(let px=pillarSpacing; px<worldW-100; px+=pillarSpacing+rand(-50,50)){
-    if(inCastleZone(px, 28)) continue;
-    const ph2 = rand(70, 160);
-    const pw  = 28;
-    pillars.push({ x:px, y:gY-ph2, w:pw, h:ph2+60 });
-    const topW = Math.round((ph2+60) * 0.56);
-    const topX = px + pw/2 - topW/2;
-    platforms.push({ x:topX, y:gY-ph2, w:topW, h:14, type:'platform', nosprite:true });
-  }
-
-  // Château final de niveau (verrouillé/déverrouillé)
+  // ── End flag ──────────────────────────────────────────────────
   const lockedGate = readyImage(commonLevelImages.castleLocked);
-  const gateRatio = lockedGate ? (lockedGate.width / lockedGate.height) : 1.6;
+  const gateRatio  = lockedGate ? (lockedGate.width / lockedGate.height) : 1.6;
   const endH = 244;
   const endW = Math.round(endH * gateRatio);
   flag = { x: worldW - 240, y: gY - endH + 4, w: endW, h: endH };
   castleRewardCoins = 0;
 
-  // Player spawn
+  // ── Player spawn ──────────────────────────────────────────────
   player.x = 80;
   player.y = gY - player.h - 2;
   player.vx = 0; player.vy = 0;
