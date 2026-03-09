@@ -1270,7 +1270,7 @@ function rectsTouch(a,b){ return a.x<b.x+b.w&&a.x+a.w>b.x&&a.y<b.y+b.h&&a.y+a.h>
 //  STYLE AVANCÉ — PIXEL ART PAR TABLEAU DE PIXELS
 // ════════════════════════════════════════════════════════════════
 
-let advStyle = 'simple';
+let advStyle = localStorage.getItem('cqSprStyle') || 'advanced';
 function setSprStyle(s){
   advStyle = s;
   localStorage.setItem('cqSprStyle', s);
@@ -2402,6 +2402,22 @@ document.getElementById('inGameMenuBtn').addEventListener('click', ()=>{
 });
 document.getElementById('resetErrorsBtn').addEventListener('click', resetErrors);
 document.getElementById('settingsBackBtn').addEventListener('click',()=>showScreen('startScreen'));
+
+// ── Sélecteur de niveau ───────────────────────────────────────
+(function buildLevelSelector(){
+  const row = document.getElementById('levelSelectRow');
+  LEVELS.forEach((lvl, idx) => {
+    const btn = document.createElement('button');
+    btn.className = 'tog';
+    btn.innerHTML = `${lvl.emoji} ${lvl.name.split(' ').slice(0,3).join(' ')}`;
+    btn.title = lvl.name;
+    btn.addEventListener('click', () => {
+      showScreen('startScreen');
+      startLevel(idx);
+    });
+    row.appendChild(btn);
+  });
+})();
 document.getElementById('howtoBtn').addEventListener('click',    ()=>showScreen('howtoScreen'));
 document.getElementById('howtoBackBtn').addEventListener('click',()=>showScreen('startScreen'));
 
