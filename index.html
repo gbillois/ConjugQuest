@@ -3,6 +3,12 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#7c3aed">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="ConjugQuest">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="assets/icon-192.png">
 <title>Conjugaison Quest ⚔️</title>
 <style>
 :root{
@@ -75,10 +81,11 @@ canvas{position:absolute;top:0;left:0;width:100%;height:100%;image-rendering:pix
   max-width:480px;
   height:122px;
   flex-shrink:0;
-  display:flex;justify-content:space-between;align-items:center;
-  padding:10px 14px;
+  display:flex;justify-content:space-between;align-items:flex-start;
+  padding:10px 14px 0;
   pointer-events:none;
   background:var(--c-ctrl);
+  overflow:visible;
 }
 .dpad{display:flex;gap:12px;pointer-events:all;align-items:flex-end;}
 .cbtn{
@@ -93,8 +100,19 @@ canvas{position:absolute;top:0;left:0;width:100%;height:100%;image-rendering:pix
   filter:drop-shadow(0 2px 0 rgba(0,0,0,.35));
 }
 .cbtn.pressed{filter:brightness(1.22) drop-shadow(0 1px 0 rgba(0,0,0,.28));transform:translateY(2px) scale(.985);}
-#leftBtn,#rightBtn{width:112px;height:56px;margin-bottom:10px;}
-#jumpBtn{width:92px;height:92px;}
+/* Image area stays the same; padding-bottom doubles the hit zone downward */
+#leftBtn,#rightBtn{
+  width:112px;height:56px;
+  padding-bottom:56px;
+  background-size:112px 56px;
+  background-position:top center;
+}
+#jumpBtn{
+  width:92px;height:92px;
+  padding-bottom:92px;
+  background-size:92px 92px;
+  background-position:top center;
+}
 #leftBtn{background-image:url('assets/left.png');}
 #rightBtn{background-image:url('assets/right.png');}
 #jumpBtn{background-image:url('assets/up.png');}
@@ -215,12 +233,29 @@ canvas{position:absolute;top:0;left:0;width:100%;height:100%;image-rendering:pix
   padding:10px 12px;margin-bottom:10px;
 }
 .shopCard.active{border-color:#fbbf24;background:rgba(251,191,36,.08);}
-.shopEmoji{font-size:28px;min-width:36px;text-align:center;}
+.shopThumb{width:48px;height:48px;flex-shrink:0;border-radius:6px;overflow:hidden;display:flex;align-items:center;justify-content:center;}
+.shopThumb img{width:100%;height:100%;object-fit:cover;image-rendering:pixelated;}
+.shopEmoji{font-size:28px;text-align:center;}
 .shopInfo{flex:1;line-height:1.4;font-size:13px;color:var(--c-text);}
 .shopInfo small{color:var(--c-sub);font-size:11px;}
 .shopBuyBtn{font-size:11px;padding:6px 10px;min-width:72px;text-align:center;}
 .shopBuyBtn.owned{background:var(--c-tog-border);color:var(--c-sub);}
 .shopBuyBtn.equipped{background:#fbbf24;color:#1c1917;font-weight:bold;}
+/* ── PWA update banner ── */
+#updateBanner{
+  display:none;position:fixed;bottom:0;left:0;right:0;z-index:9999;
+  background:linear-gradient(90deg,#4c1d95,#7c3aed);
+  color:#fff;font-family:'Courier New',monospace;font-size:14px;
+  padding:10px 16px;align-items:center;justify-content:center;gap:12px;
+  box-shadow:0 -2px 12px rgba(124,58,237,.5);
+}
+#updateBanner.visible{display:flex;}
+#updateBanner button{
+  background:#ffd700;color:#1c1917;border:none;border-radius:8px;
+  padding:6px 14px;font-size:13px;font-weight:bold;
+  font-family:'Courier New',monospace;cursor:pointer;white-space:nowrap;
+}
+#updateBanner button:active{transform:scale(.96);}
 </style>
 </head>
 <body>
@@ -379,5 +414,47 @@ canvas{position:absolute;top:0;left:0;width:100%;height:100%;image-rendering:pix
 <script src="js/data.js"></script>
 <script src="js/sprites.js"></script>
 <script src="js/game.js"></script>
+
+<!-- PWA update banner -->
+<div id="updateBanner">
+  <span>Une nouvelle version est disponible !</span>
+  <button id="updateBtn">Mettre à jour</button>
+</div>
+
+<script>
+if ('serviceWorker' in navigator) {
+  let waitingSW = null;
+
+  navigator.serviceWorker.register('./sw.js').then(reg => {
+    // A new SW is already waiting (e.g. hard-reload after deploy)
+    if (reg.waiting) {
+      waitingSW = reg.waiting;
+      document.getElementById('updateBanner').classList.add('visible');
+    }
+    // A new SW just finished installing and is now waiting
+    reg.addEventListener('updatefound', () => {
+      const newSW = reg.installing;
+      newSW.addEventListener('statechange', () => {
+        if (newSW.state === 'installed' && navigator.serviceWorker.controller) {
+          waitingSW = newSW;
+          document.getElementById('updateBanner').classList.add('visible');
+        }
+      });
+    });
+    // Poll for updates every 60 s while the page is open
+    setInterval(() => reg.update(), 60_000);
+  });
+
+  // When the SW activates (after skipWaiting), reload the page
+  let refreshing = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!refreshing) { refreshing = true; location.reload(); }
+  });
+
+  document.getElementById('updateBtn').addEventListener('click', () => {
+    if (waitingSW) waitingSW.postMessage('SKIP_WAITING');
+  });
+}
+</script>
 </body>
 </html>
