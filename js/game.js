@@ -12,6 +12,14 @@ function loadImage(src){
   return img;
 }
 
+// 32×32 ground tile files placed at the root of the levels directory.
+// The snow biome uses ice-ground.png.
+const BIOME_GROUND_TILE_SRCS = {
+  forest: `${LEVELS_BASE}/forest-ground.png`,
+  desert: `${LEVELS_BASE}/desert-ground.png`,
+  snow:   `${LEVELS_BASE}/ice-ground.png`,
+};
+
 const biomeImages = {};
 BIOMES.forEach((biome) => {
   biomeImages[biome] = {
@@ -20,6 +28,7 @@ BIOMES.forEach((biome) => {
     groundPlatform: loadImage(`${LEVELS_BASE}/${biome}/ground-platform.png`),
     ground:         loadImage(`${LEVELS_BASE}/${biome}/ground.png`),
     pillar:         loadImage(`${LEVELS_BASE}/${biome}/pillar.png`),
+    groundTile:     BIOME_GROUND_TILE_SRCS[biome] ? loadImage(BIOME_GROUND_TILE_SRCS[biome]) : null,
   };
 });
 
@@ -1746,6 +1755,20 @@ function drawBgAdv(c){
 }
 
 // ── Sol continu (sprite-based) ────────────────────────────────
+// Tiles an image at its natural size (pixel-perfect) over a rectangle.
+function drawTiled32(img, x, y, width, height){
+  if(!img || width <= 0 || height <= 0) return;
+  const tw = img.width  || 32;
+  const th = img.height || 32;
+  for(let row = y; row < y + height; row += th){
+    const drawH = Math.min(th, y + height - row);
+    for(let col = x; col < x + width; col += tw){
+      const drawW = Math.min(tw, x + width - col);
+      ctx.drawImage(img, 0, 0, drawW, drawH, col, row, drawW, drawH);
+    }
+  }
+}
+
 function drawRepeatedSprite(img, x, y, width, targetH){
   if(!img || targetH <= 0 || width <= 0) return;
   const tileW = Math.max(1, Math.round(targetH * (img.width / img.height)));
@@ -1760,8 +1783,9 @@ function drawGroundStripAdv(gY, groundPlatforms){
   const lvl2  = LEVELS[GS.level] || LEVELS[0];
   const c2    = getLvlColors(lvl2);
   const biome = getLevelBiome();
-  const topImg  = advStyle === 'advanced' ? getBiomeImg(biome, 'groundPlatform') : null;
-  const bodyImg = advStyle === 'advanced' ? getBiomeImg(biome, 'ground')         : null;
+  const topImg      = advStyle === 'advanced' ? getBiomeImg(biome, 'groundPlatform') : null;
+  const groundTile  = advStyle === 'advanced' ? getBiomeImg(biome, 'groundTile')     : null;
+  const bodyImg     = advStyle === 'advanced' ? getBiomeImg(biome, 'ground')         : null;
 
   // Merge adjacent ground tiles into contiguous draw-chunks
   const sorted = [...groundPlatforms].sort((a, b) => a.x - b.x);
@@ -1776,10 +1800,15 @@ function drawGroundStripAdv(gY, groundPlatforms){
   }
 
   for(const ch of chunks){
-    if(topImg && bodyImg){
-      drawRepeatedSprite(topImg,  ch.x, gY - 24, ch.w, 42);
-      for(let ty = gY + 14; ty < H + 28; ty += 25)
-        drawRepeatedSprite(bodyImg, ch.x, ty, ch.w, 28);
+    if(topImg && (groundTile || bodyImg)){
+      drawRepeatedSprite(topImg, ch.x, gY - 24, ch.w, 42);
+      if(groundTile){
+        // Use 32×32 pixel-perfect tiling for biomes that have a ground tile sheet.
+        drawTiled32(groundTile, ch.x, gY + 14, ch.w, H + 28 - (gY + 14));
+      } else {
+        for(let ty = gY + 14; ty < H + 28; ty += 25)
+          drawRepeatedSprite(bodyImg, ch.x, ty, ch.w, 28);
+      }
     } else {
       ctx.fillStyle = c2.ground;
       ctx.fillRect(ch.x, gY - 15, ch.w, H - (gY - 15));
