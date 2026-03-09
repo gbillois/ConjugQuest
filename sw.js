@@ -1,6 +1,6 @@
 // ─── ConjugQuest Service Worker ───────────────────────────────
 // Bump CACHE_NAME to trigger an update prompt on every deploy.
-const CACHE_NAME = 'cq-v1';
+const CACHE_NAME = 'cq-v2';
 
 // Core shell — cached at install time so the app works offline immediately.
 const PRECACHE = [
