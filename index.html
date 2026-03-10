@@ -104,7 +104,7 @@ canvas{position:absolute;top:0;left:0;width:100%;height:100%;image-rendering:pix
 #leftBtn,#rightBtn{
   width:112px;height:56px;
   padding-bottom:56px;
-  background-size:112px 56px;
+  background-size:112px 112px;
   background-position:top center;
 }
 #jumpBtn{
@@ -113,8 +113,8 @@ canvas{position:absolute;top:0;left:0;width:100%;height:100%;image-rendering:pix
   background-size:92px 92px;
   background-position:top center;
 }
-#leftBtn{background-image:url('assets/left.png');}
-#rightBtn{background-image:url('assets/right.png');}
+#leftBtn{background-image:url('assets/left-right.png');background-position:top center;}
+#rightBtn{background-image:url('assets/left-right.png');background-position:bottom center;}
 #jumpBtn{background-image:url('assets/up.png');}
 
 /* ── Question modal ── */
@@ -330,9 +330,23 @@ canvas{position:absolute;top:0;left:0;width:100%;height:100%;image-rendering:pix
     <div class="setSection">
       <div class="setLabel">Qualité des sprites</div>
       <div class="togRow">
-        <button class="tog sprTog on" data-spr="simple">⬜ Simple</button>
-        <button class="tog sprTog" data-spr="advanced">✨ Avancé</button>
+        <button class="tog sprTog" data-spr="simple">⬜ Simple</button>
+        <button class="tog sprTog on" data-spr="advanced">✨ Avancé</button>
       </div>
+    </div>
+
+    <div class="setSection">
+      <div class="setLabel">Sélecteur de niveau</div>
+      <div class="togRow" style="display:flex;gap:8px;align-items:center">
+        <select id="settingsLevelSelect" style="flex:1;background:var(--c-tog-bg);color:var(--c-text);border:2px solid var(--c-tog-border);border-radius:8px;padding:10px 8px;font-family:'Courier New',monospace;font-size:13px"></select>
+        <button class="sBtn" id="startSelectedLevelBtn" style="margin:0;padding:10px 12px;font-size:12px;min-width:132px">▶ LANCER</button>
+      </div>
+    </div>
+
+    <div class="setSection">
+      <div class="setLabel">Mise à jour de l'application</div>
+      <button class="sBtn grey" id="settingsUpdateBtn" style="font-size:12px;padding:8px 14px">🔄 Vérifier / Mettre à jour</button>
+      <div id="settingsUpdateMsg" style="margin-top:8px;font-size:12px;color:var(--c-sub);min-height:16px"></div>
     </div>
 
     <div class="setSection">
@@ -424,8 +438,12 @@ canvas{position:absolute;top:0;left:0;width:100%;height:100%;image-rendering:pix
 <script>
 if ('serviceWorker' in navigator) {
   let waitingSW = null;
+  let regRef = null;
+  let regPromise = null;
+  let regError = null;
 
-  navigator.serviceWorker.register('./sw.js').then(reg => {
+  regPromise = navigator.serviceWorker.register('./sw.js').then(reg => {
+    regRef = reg;
     // A new SW is already waiting (e.g. hard-reload after deploy)
     if (reg.waiting) {
       waitingSW = reg.waiting;
@@ -443,7 +461,41 @@ if ('serviceWorker' in navigator) {
     });
     // Poll for updates every 60 s while the page is open
     setInterval(() => reg.update(), 60_000);
+    return reg;
+  }).catch(err => {
+    regError = err;
+    return null;
   });
+
+  window.__cqSW = {
+    async checkForUpdate() {
+      if (!regRef && regPromise) {
+        await regPromise;
+      }
+      if (!regRef) {
+        return {
+          ok: false,
+          waiting: false,
+          message: regError ? 'Service Worker non disponible (environnement local).' : 'Service Worker en cours d\'initialisation.'
+        };
+      }
+      return regRef.update()
+        .then(() => {
+          if (regRef.waiting) {
+            waitingSW = regRef.waiting;
+            document.getElementById('updateBanner').classList.add('visible');
+            return { ok: true, waiting: true, message: 'Mise à jour prête. Application en cours…' };
+          }
+          return { ok: true, waiting: false, message: 'Version déjà à jour.' };
+        })
+        .catch(() => ({ ok: false, waiting: false, message: 'Échec de vérification de mise à jour.' }));
+    },
+    applyWaitingUpdate() {
+      if (!waitingSW) return false;
+      waitingSW.postMessage('SKIP_WAITING');
+      return true;
+    }
+  };
 
   // When the SW activates (after skipWaiting), reload the page
   let refreshing = false;
@@ -452,7 +504,7 @@ if ('serviceWorker' in navigator) {
   });
 
   document.getElementById('updateBtn').addEventListener('click', () => {
-    if (waitingSW) waitingSW.postMessage('SKIP_WAITING');
+    if (window.__cqSW) window.__cqSW.applyWaitingUpdate();
   });
 }
 </script>

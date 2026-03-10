@@ -5,6 +5,7 @@ const VERSION = 'v1.8';
 // ── Level visual assets ────────────────────────────────────────
 const BIOMES = ['forest', 'desert', 'snow', 'mountain', 'desolation'];
 const LEVELS_BASE = 'assets/levels';
+const PLATFORMS_BASE = 'assets/platforms';
 
 function loadImage(src){
   const img = new Image();
@@ -12,24 +13,178 @@ function loadImage(src){
   return img;
 }
 
-// 32×32 ground tile files placed at the root of the levels directory.
-// The snow biome uses ice-ground.png.
-const BIOME_GROUND_TILE_SRCS = {
-  forest: `${LEVELS_BASE}/forest-ground.png`,
-  desert: `${LEVELS_BASE}/desert-ground.png`,
-  snow:   `${LEVELS_BASE}/ice-ground.png`,
+// New per-biome platform tileset sheets (white background is keyed out at runtime).
+const BIOME_PLATFORM_SHEET_SRCS = {
+  forest:     `${PLATFORMS_BASE}/forest-sheet.png`,
+  desert:     `${PLATFORMS_BASE}/desert-sheet.png`,
+  snow:       `${PLATFORMS_BASE}/snow-sheet.png`,
+  mountain:   `${PLATFORMS_BASE}/mountain-sheet.png`,
+  desolation: `${PLATFORMS_BASE}/desolation-sheet.png`,
 };
+
+const PLATFORM_TILE_COORDS = {
+  floating:       { row: 0, col: 1 },
+  groundPlatform: { row: 0, col: 0 },
+  ground:         { row: 2, col: 1 },
+  pillar:         { row: 3, col: 1 },
+};
+
+function makeCanvas(w, h){
+  const c = document.createElement('canvas');
+  c.width = w;
+  c.height = h;
+  return c;
+}
+
+function extractTilesFromSheet(sheetImg){
+  const w = sheetImg.naturalWidth || sheetImg.width;
+  const h = sheetImg.naturalHeight || sheetImg.height;
+  if(!w || !h) return null;
+
+  const srcCanvas = makeCanvas(w, h);
+  const srcCtx = srcCanvas.getContext('2d', { willReadFrequently: true });
+  srcCtx.drawImage(sheetImg, 0, 0);
+
+  const imgData = srcCtx.getImageData(0, 0, w, h);
+  const px = imgData.data;
+
+  // Convert sheet backdrop (white/light gray) to transparency.
+  // We infer backdrop color from the four corners to support variants.
+  const corners = [
+    0,
+    (w - 1) << 2,
+    ((h - 1) * w) << 2,
+    (((h - 1) * w + (w - 1)) << 2),
+  ];
+  let bgR = 0, bgG = 0, bgB = 0;
+  for(const ci of corners){
+    bgR += px[ci];
+    bgG += px[ci + 1];
+    bgB += px[ci + 2];
+  }
+  bgR = Math.round(bgR / corners.length);
+  bgG = Math.round(bgG / corners.length);
+  bgB = Math.round(bgB / corners.length);
+
+  function isBackdrop(r, g, b){
+    // Near the sampled background color, and near-neutral (R≈G≈B).
+    const d = Math.abs(r - bgR) + Math.abs(g - bgG) + Math.abs(b - bgB);
+    const neutral = Math.max(r, g, b) - Math.min(r, g, b) <= 18;
+    return neutral && d <= 70;
+  }
+
+  for(let i = 0; i < px.length; i += 4){
+    if(isBackdrop(px[i], px[i + 1], px[i + 2])){
+      px[i + 3] = 0;
+    }
+  }
+  srcCtx.putImageData(imgData, 0, 0);
+
+  const visited = new Uint8Array(w * h);
+  const boxes = [];
+  const stack = [];
+
+  function alphaAt(pos){
+    return px[(pos << 2) + 3];
+  }
+
+  for(let y = 0; y < h; y++){
+    for(let x = 0; x < w; x++){
+      const start = y * w + x;
+      if(visited[start] || !alphaAt(start)) continue;
+
+      let minX = x, maxX = x, minY = y, maxY = y, area = 0;
+      stack.push(start);
+
+      while(stack.length){
+        const pos = stack.pop();
+        if(visited[pos]) continue;
+        visited[pos] = 1;
+        if(!alphaAt(pos)) continue;
+
+        const py = Math.floor(pos / w);
+        const px2 = pos - py * w;
+        area++;
+        if(px2 < minX) minX = px2;
+        if(px2 > maxX) maxX = px2;
+        if(py < minY) minY = py;
+        if(py > maxY) maxY = py;
+
+        if(px2 > 0) stack.push(pos - 1);
+        if(px2 < w - 1) stack.push(pos + 1);
+        if(py > 0) stack.push(pos - w);
+        if(py < h - 1) stack.push(pos + w);
+      }
+
+      const bw = maxX - minX + 1;
+      const bh = maxY - minY + 1;
+      if(area > 700 && bw > 40 && bh > 30){
+        boxes.push({
+          x: minX,
+          y: minY,
+          w: bw,
+          h: bh,
+          cx: minX + bw / 2,
+          cy: minY + bh / 2,
+        });
+      }
+    }
+  }
+
+  if(!boxes.length) return null;
+
+  boxes.sort((a, b) => (a.cy - b.cy) || (a.cx - b.cx));
+  const rows = [];
+  for(const box of boxes){
+    const row = rows.find(r => Math.abs(r.cy - box.cy) <= 70);
+    if(row){
+      row.items.push(box);
+      row.cy = (row.cy * (row.items.length - 1) + box.cy) / row.items.length;
+    } else {
+      rows.push({ cy: box.cy, items: [box] });
+    }
+  }
+  rows.sort((a, b) => a.cy - b.cy);
+  for(const row of rows) row.items.sort((a, b) => a.cx - b.cx);
+
+  const out = {};
+  Object.entries(PLATFORM_TILE_COORDS).forEach(([key, pos]) => {
+    const row = rows[pos.row];
+    const box = row && row.items[pos.col];
+    if(!box) return;
+    const tile = makeCanvas(box.w, box.h);
+    const tctx = tile.getContext('2d');
+    tctx.drawImage(srcCanvas, box.x, box.y, box.w, box.h, 0, 0, box.w, box.h);
+    out[key] = tile;
+  });
+
+  return out;
+}
 
 const biomeImages = {};
 BIOMES.forEach((biome) => {
   biomeImages[biome] = {
     background:     loadImage(`${LEVELS_BASE}/${biome}/background.png`),
-    floating:       loadImage(`${LEVELS_BASE}/${biome}/floating-platform.png`),
-    groundPlatform: loadImage(`${LEVELS_BASE}/${biome}/ground-platform.png`),
-    ground:         loadImage(`${LEVELS_BASE}/${biome}/ground.png`),
-    pillar:         loadImage(`${LEVELS_BASE}/${biome}/pillar.png`),
-    groundTile:     BIOME_GROUND_TILE_SRCS[biome] ? loadImage(BIOME_GROUND_TILE_SRCS[biome]) : null,
+    // Terrain visuals come from platform sheets only.
+    floating:       null,
+    groundPlatform: null,
+    ground:         null,
+    pillar:         null,
   };
+
+  const sheetSrc = BIOME_PLATFORM_SHEET_SRCS[biome];
+  if(sheetSrc){
+    const sheetImg = new Image();
+    sheetImg.onload = () => {
+      const tiles = extractTilesFromSheet(sheetImg);
+      if(!tiles) return;
+      if(tiles.floating)       biomeImages[biome].floating = tiles.floating;
+      if(tiles.groundPlatform) biomeImages[biome].groundPlatform = tiles.groundPlatform;
+      if(tiles.ground)         biomeImages[biome].ground = tiles.ground;
+      if(tiles.pillar)         biomeImages[biome].pillar = tiles.pillar;
+    };
+    sheetImg.src = sheetSrc;
+  }
 });
 
 const commonLevelImages = {
@@ -40,7 +195,11 @@ const commonLevelImages = {
 };
 
 function readyImage(img){
-  return img && img.complete && img.naturalWidth > 0 ? img : null;
+  if(!img) return null;
+  if(typeof HTMLCanvasElement !== 'undefined' && img instanceof HTMLCanvasElement){
+    return img.width > 0 && img.height > 0 ? img : null;
+  }
+  return img.complete && img.naturalWidth > 0 ? img : null;
 }
 
 function getBiomeImg(biome, key){
@@ -79,10 +238,6 @@ const HERO_SPRITES = {
   pirate: { idle:{}, run:{}, jump:{}, ready: false },
 };
 
-// Keep PALADIN_SPRITES as alias for backward compat
-const PALADIN_SPRITES = HERO_SPRITES.knight;
-let paladinSpritesReady = false;
-
 function loadHeroSprites(id, runFrames, jumpFrames){
   const base = HERO_BASES[id];
   const spr  = HERO_SPRITES[id];
@@ -106,7 +261,6 @@ function loadHeroSprites(id, runFrames, jumpFrames){
   spr.idle.left  = idleL;
   Promise.all([pIdleR, pIdleL]).then(()=>{
     spr.ready = true;
-    if(id==='knight') paladinSpritesReady = true;
   });
 
   // Run + jump frames loaded separately (may 404 — graceful fallback in drawPlayerAdv)
@@ -128,56 +282,6 @@ loadHeroSprites('knight', 6, 8);
 loadHeroSprites('mage',   6, 8);
 loadHeroSprites('ninja',  6, 8);
 loadHeroSprites('pirate', 6, 8);
-
-// ════════════════════════════════════════════════════════════════
-//  GOBLIN SPRITE LOADER
-// ════════════════════════════════════════════════════════════════
-
-const GOBLIN_BASE = 'assets/goblin/';
-const GOBLIN_SPRITES = { east: [], west: [] };
-let goblinSpritesReady = false;
-
-(function loadGoblinSprites(){
-  const toLoad = [];
-  function img(src){
-    const i = new Image();
-    const p = new Promise(r => { i.onload = r; i.onerror = r; });
-    i.src = GOBLIN_BASE + src;
-    toLoad.push(p);
-    return i;
-  }
-  for(let i=0;i<6;i++){
-    const pad = String(i).padStart(3,'0');
-    GOBLIN_SPRITES.east.push(img('walk/east/frame_'+pad+'.png'));
-    GOBLIN_SPRITES.west.push(img('walk/west/frame_'+pad+'.png'));
-  }
-  Promise.all(toLoad).then(()=>{ goblinSpritesReady = true; });
-})();
-
-// ════════════════════════════════════════════════════════════════
-//  MUMMY SPRITE LOADER
-// ════════════════════════════════════════════════════════════════
-
-const MUMMY_BASE = 'assets/mummy/';
-const MUMMY_SPRITES = { east: [], west: [] };
-let mummySpritesReady = false;
-
-(function loadMummySprites(){
-  const toLoad = [];
-  function img(src){
-    const i = new Image();
-    const p = new Promise(r => { i.onload = r; i.onerror = r; });
-    i.src = MUMMY_BASE + src;
-    toLoad.push(p);
-    return i;
-  }
-  for(let i=0;i<6;i++){
-    const pad = String(i).padStart(3,'0');
-    MUMMY_SPRITES.east.push(img('walk/east/frame_'+pad+'.png'));
-    MUMMY_SPRITES.west.push(img('walk/west/frame_'+pad+'.png'));
-  }
-  Promise.all(toLoad).then(()=>{ mummySpritesReady = true; });
-})();
 
 // ════════════════════════════════════════════════════════════════
 //  BIOME ENEMY SPRITE LOADERS
@@ -1270,7 +1374,7 @@ function rectsTouch(a,b){ return a.x<b.x+b.w&&a.x+a.w>b.x&&a.y<b.y+b.h&&a.y+a.h>
 //  STYLE AVANCÉ — PIXEL ART PAR TABLEAU DE PIXELS
 // ════════════════════════════════════════════════════════════════
 
-let advStyle = 'simple';
+let advStyle = localStorage.getItem('cqSprStyle') || 'advanced';
 function setSprStyle(s){
   advStyle = s;
   localStorage.setItem('cqSprStyle', s);
@@ -1425,7 +1529,7 @@ function lighten(hex){
 
 // ── Colonnes / piliers de décor ────────────────────────────────
 function drawPillar(pl, lvl){
-  const pillarImg = advStyle === 'advanced' ? getBiomeImg(getLevelBiome(), 'pillar') : null;
+  const pillarImg = getBiomeImg(getLevelBiome(), 'pillar');
   if(pillarImg){
     // Keep native pillar sprite proportions and avoid adding a fake top platform.
     const drawW = pl.w;
@@ -1632,11 +1736,8 @@ function drawPlayerAdvFallback(p){
 }
 
 // ── Ennemi avancé ─────────────────────────────────────────────
-function drawGoblinAdv(bob){
-  if(!goblinSpritesReady){ drawGoblin(bob); return; }
-  const frame = Math.floor(Date.now()/120) % 6;
-  ctx.imageSmoothingEnabled = false;
-  ctx.drawImage(GOBLIN_SPRITES.east[frame], -48, -96+bob, 96, 96);
+function drawGoblinAdv(bob, facing=1){
+  drawBiomeEnemyAdv(FOREST_GOBLIN_GREEN_LOADER, '#3f8c2f', bob, facing);
 }
 
 function drawSkeletonAdv(bob){
@@ -1660,11 +1761,8 @@ function drawDragonAdv(bob){
 }
 
 // ── Mummy (advanced — PixelLab sprites) ──────────────────────
-function drawMummyAdv(bob){
-  if(!mummySpritesReady){ drawMummy(bob); return; }
-  const frame = Math.floor(Date.now()/160) % 6;
-  ctx.imageSmoothingEnabled = false;
-  ctx.drawImage(MUMMY_SPRITES.east[frame], -48, -96+bob, 96, 96);
+function drawMummyAdv(bob, facing=1){
+  drawBiomeEnemyAdv(DESERT_MUMMY_LOADER, '#d6c49a', bob, facing);
 }
 
 // ── Biome enemies (PixelLab sprites) ──────────────────────────
@@ -1783,9 +1881,8 @@ function drawGroundStripAdv(gY, groundPlatforms){
   const lvl2  = LEVELS[GS.level] || LEVELS[0];
   const c2    = getLvlColors(lvl2);
   const biome = getLevelBiome();
-  const topImg      = advStyle === 'advanced' ? getBiomeImg(biome, 'groundPlatform') : null;
-  const groundTile  = advStyle === 'advanced' ? getBiomeImg(biome, 'groundTile')     : null;
-  const bodyImg     = advStyle === 'advanced' ? getBiomeImg(biome, 'ground')         : null;
+  const topImg  = getBiomeImg(biome, 'groundPlatform');
+  const bodyImg = getBiomeImg(biome, 'ground');
 
   // Merge adjacent ground tiles into contiguous draw-chunks
   const sorted = [...groundPlatforms].sort((a, b) => a.x - b.x);
@@ -1800,15 +1897,10 @@ function drawGroundStripAdv(gY, groundPlatforms){
   }
 
   for(const ch of chunks){
-    if(topImg && (groundTile || bodyImg)){
+    if(topImg && bodyImg){
       drawRepeatedSprite(topImg, ch.x, gY - 24, ch.w, 42);
-      if(groundTile){
-        // Use 32×32 pixel-perfect tiling for biomes that have a ground tile sheet.
-        drawTiled32(groundTile, ch.x, gY + 14, ch.w, H + 28 - (gY + 14));
-      } else {
-        for(let ty = gY + 14; ty < H + 28; ty += 25)
-          drawRepeatedSprite(bodyImg, ch.x, ty, ch.w, 28);
-      }
+      for(let ty = gY + 14; ty < H + 28; ty += 25)
+        drawRepeatedSprite(bodyImg, ch.x, ty, ch.w, 28);
     } else {
       ctx.fillStyle = c2.ground;
       ctx.fillRect(ch.x, gY - 15, ch.w, H - (gY - 15));
@@ -1818,11 +1910,6 @@ function drawGroundStripAdv(gY, groundPlatforms){
 
 // ── Plateformes flottantes (sprite-based) ─────────────────────
 function drawPlatformAdv(p, lvl){
-  if(advStyle !== 'advanced'){
-    drawPlatform(p, lvl);
-    return;
-  }
-
   if(p.type !== 'ground' && p.type !== 'pillar'){
     if(p.nosprite) return;
     const floatingImg = getBiomeImg(getLevelBiome(), 'floating');
@@ -2047,36 +2134,34 @@ function drawEnemy(e){
   }
   const bob = Math.sin(Date.now()*.004+e.x*.01)*2;
 
-  if(advStyle==='advanced'){
-    if(e.type==='goblin')                  drawGoblinAdv(bob);
-    else if(e.type==='skeleton')           drawSkeletonAdv(bob);
-    else if(e.type==='dragon')             drawDragonAdv(bob);
-    else if(e.type==='mummy')              drawMummyAdv(bob);
-    else if(e.type==='forest-sprite')       drawForestSpriteAdv(bob, e.facing);
-    else if(e.type==='forest-goblin-green') drawForestGoblinGreenAdv(bob, e.facing);
-    else if(e.type==='desert-scorpion')     drawDesertScorpionAdv(bob, e.facing);
-    else if(e.type==='desert-mummy')        drawDesertMummyAdv(bob, e.facing);
-    else if(e.type==='mountain-troll')      drawMountainTrollAdv(bob, e.facing);
-    else if(e.type==='mountain-dwarf')      drawMountainDwarfAdv(bob, e.facing);
-    else if(e.type==='frost-zombie')        drawFrostZombieAdv(bob, e.facing);
-    else if(e.type==='snow-yeti')           drawSnowYetiAdv(bob, e.facing);
-    else if(e.type==='desolation-skeleton') drawDesolationSkeletonAdv(bob, e.facing);
-    else if(e.type==='desolation-wraith')   drawDesolationWraithAdv(bob, e.facing);
-  } else {
-    if(e.type==='goblin')        drawGoblin(bob);
-    else if(e.type==='skeleton') drawSkeleton(bob);
-    else if(e.type==='dragon')   drawDragon(bob);
-    else if(e.type==='mummy')    drawMummy(bob);
-    else if(e.type==='forest-sprite')       drawForestSpriteAdv(bob, e.facing);
-    else if(e.type==='forest-goblin-green') drawForestGoblinGreenAdv(bob, e.facing);
-    else if(e.type==='desert-scorpion')     drawDesertScorpionAdv(bob, e.facing);
-    else if(e.type==='desert-mummy')        drawDesertMummyAdv(bob, e.facing);
-    else if(e.type==='mountain-troll')      drawMountainTrollAdv(bob, e.facing);
-    else if(e.type==='mountain-dwarf')      drawMountainDwarfAdv(bob, e.facing);
-    else if(e.type==='frost-zombie')        drawFrostZombieAdv(bob, e.facing);
-    else if(e.type==='snow-yeti')           drawSnowYetiAdv(bob, e.facing);
-    else if(e.type==='desolation-skeleton') drawDesolationSkeletonAdv(bob, e.facing);
-    else if(e.type==='desolation-wraith')   drawDesolationWraithAdv(bob, e.facing);
+  if(e.type === 'goblin') {
+    advStyle === 'advanced' ? drawGoblinAdv(bob, e.facing) : drawGoblin(bob);
+  } else if(e.type === 'skeleton') {
+    advStyle === 'advanced' ? drawSkeletonAdv(bob) : drawSkeleton(bob);
+  } else if(e.type === 'dragon') {
+    advStyle === 'advanced' ? drawDragonAdv(bob) : drawDragon(bob);
+  } else if(e.type === 'mummy') {
+    advStyle === 'advanced' ? drawMummyAdv(bob, e.facing) : drawMummy(bob);
+  } else if(e.type === 'forest-sprite') {
+    drawForestSpriteAdv(bob, e.facing);
+  } else if(e.type === 'forest-goblin-green') {
+    drawForestGoblinGreenAdv(bob, e.facing);
+  } else if(e.type === 'desert-scorpion') {
+    drawDesertScorpionAdv(bob, e.facing);
+  } else if(e.type === 'desert-mummy') {
+    drawDesertMummyAdv(bob, e.facing);
+  } else if(e.type === 'mountain-troll') {
+    drawMountainTrollAdv(bob, e.facing);
+  } else if(e.type === 'mountain-dwarf') {
+    drawMountainDwarfAdv(bob, e.facing);
+  } else if(e.type === 'frost-zombie') {
+    drawFrostZombieAdv(bob, e.facing);
+  } else if(e.type === 'snow-yeti') {
+    drawSnowYetiAdv(bob, e.facing);
+  } else if(e.type === 'desolation-skeleton') {
+    drawDesolationSkeletonAdv(bob, e.facing);
+  } else if(e.type === 'desolation-wraith') {
+    drawDesolationWraithAdv(bob, e.facing);
   }
 
   ctx.restore();
@@ -2362,8 +2447,29 @@ function triggerGameOver(){
 //  BOUTONS UI
 // ════════════════════════════════════════════════════════════════
 
+function populateLevelSelector(){
+  const sel = document.getElementById('settingsLevelSelect');
+  if(!sel) return;
+  sel.innerHTML = '';
+  LEVELS.forEach((lvl, idx) => {
+    const opt = document.createElement('option');
+    opt.value = String(idx);
+    opt.textContent = `Niv.${idx+1} · ${lvl.name}`;
+    sel.appendChild(opt);
+  });
+  sel.value = String(Math.max(0, Math.min(GS.level, LEVELS.length - 1)));
+}
+
+function openSettingsScreen(){
+  showScreen('settingsScreen');
+  renderErrorList();
+  populateLevelSelector();
+  const updateMsg = document.getElementById('settingsUpdateMsg');
+  if(updateMsg) updateMsg.textContent = '';
+}
+
 document.getElementById('playBtn').addEventListener('click',     ()=>startLevel(0));
-document.getElementById('settingsBtn').addEventListener('click', ()=>{ showScreen('settingsScreen'); renderErrorList(); });
+document.getElementById('settingsBtn').addEventListener('click', openSettingsScreen);
 document.getElementById('shopBtn').addEventListener('click',     ()=>{ showScreen('shopScreen'); renderShop(); });
 document.getElementById('shopBackBtn').addEventListener('click', ()=>{
   if(GS._shopFromGame){
@@ -2404,6 +2510,33 @@ document.getElementById('resetErrorsBtn').addEventListener('click', resetErrors)
 document.getElementById('settingsBackBtn').addEventListener('click',()=>showScreen('startScreen'));
 document.getElementById('howtoBtn').addEventListener('click',    ()=>showScreen('howtoScreen'));
 document.getElementById('howtoBackBtn').addEventListener('click',()=>showScreen('startScreen'));
+document.getElementById('startSelectedLevelBtn').addEventListener('click', ()=>{
+  const sel = document.getElementById('settingsLevelSelect');
+  const idx = Number.parseInt(sel && sel.value, 10);
+  const safeIdx = Number.isFinite(idx) ? Math.max(0, Math.min(LEVELS.length - 1, idx)) : 0;
+  startLevel(safeIdx);
+});
+document.getElementById('settingsUpdateBtn').addEventListener('click', async ()=>{
+  const updateMsg = document.getElementById('settingsUpdateMsg');
+  if(updateMsg) updateMsg.textContent = 'Vérification en cours...';
+
+  if(!window.__cqSW){
+    if(updateMsg) updateMsg.textContent = 'Mises à jour indisponibles sur ce navigateur.';
+    return;
+  }
+
+  if(window.__cqSW.applyWaitingUpdate()){
+    if(updateMsg) updateMsg.textContent = 'Application de la mise à jour...';
+    return;
+  }
+
+  const res = await window.__cqSW.checkForUpdate();
+  if(res && res.waiting){
+    window.__cqSW.applyWaitingUpdate();
+  } else if(updateMsg){
+    updateMsg.textContent = (res && res.message) ? res.message : 'Vérification terminée.';
+  }
+});
 
 // ── Toggles de thème ─────────────────────────────────────────
 document.querySelectorAll('.themeTog').forEach(btn => {
@@ -2767,43 +2900,7 @@ function drawCastleRoom(){
   drawChest();
 
   // Joueur dans le château
-  const cp=castlePlayer;
-  if(advStyle==='advanced' && paladinSpritesReady){
-    // Use paladin sprite in castle too
-    ctx.save();
-    ctx.translate(cp.x+cp.w/2, cp.y+cp.h);
-    const dir = cp.facing>=0 ? 'right' : 'left';
-    let spr;
-    if(!cp.onGround){
-      const jF = PALADIN_SPRITES.jump[dir];
-      const t = Math.min(1, Math.max(0, (cp.vy - JUMP_V) / (-JUMP_V * 2)));
-      spr = jF[Math.min(jF.length-1, Math.floor(t*jF.length))];
-    } else if(Math.abs(cp.vx)>0.5){
-      const rF = PALADIN_SPRITES.run[dir];
-      spr = rF[Math.floor(cp.walkT*1.5)%rF.length];
-    } else {
-      spr = PALADIN_SPRITES.idle[dir];
-    }
-    ctx.drawImage(spr, -56, -112, 112, 112);
-    ctx.restore();
-  } else {
-    ctx.save();
-    ctx.translate(cp.x+cp.w/2, cp.y+cp.h);
-    ctx.scale(cp.facing,1);
-    ctx.fillStyle='rgba(0,0,0,.3)';
-    ctx.beginPath(); ctx.ellipse(0,0,13,4,0,0,Math.PI*2); ctx.fill();
-    const leg=Math.sin(cp.walkT)*6, arm=Math.sin(cp.walkT+Math.PI)*5;
-    if(advStyle==='advanced'){
-      pxDraw(ctx,getSkinSprite(SAVE.skin||'knight',Math.floor(cp.walkT*3)%2),-20,-44,2,false);
-    } else {
-      const sk=SAVE.skin||'knight';
-      if(sk==='knight') drawSkinKnight(leg,arm);
-      else if(sk==='mage') drawSkinMage(leg,arm);
-      else if(sk==='ninja') drawSkinNinja(leg,arm);
-      else if(sk==='pirate') drawSkinPirate(leg,arm);
-    }
-    ctx.restore();
-  }
+  drawPlayer(castlePlayer);
 
   // Anneau d'explosion du coffre
   if(chestExplodeT>0){

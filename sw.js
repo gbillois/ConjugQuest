@@ -1,6 +1,6 @@
 // ─── ConjugQuest Service Worker ───────────────────────────────
 // Bump CACHE_NAME to trigger an update prompt on every deploy.
-const CACHE_NAME = 'cq-v1';
+const CACHE_NAME = 'cq-v2';
 
 // Core shell — cached at install time so the app works offline immediately.
 const PRECACHE = [
@@ -10,9 +10,13 @@ const PRECACHE = [
   './js/game.js',
   './js/sprites.js',
   './manifest.json',
-  './assets/left.png',
-  './assets/right.png',
+  './assets/left-right.png',
   './assets/up.png',
+  './assets/platforms/forest-sheet.png',
+  './assets/platforms/desert-sheet.png',
+  './assets/platforms/snow-sheet.png',
+  './assets/platforms/mountain-sheet.png',
+  './assets/platforms/desolation-sheet.png',
   './assets/icon-192.png',
   './assets/icon-512.png',
 ];
